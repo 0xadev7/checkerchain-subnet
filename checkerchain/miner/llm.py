@@ -59,18 +59,18 @@ class ReviewScoreSchema(BaseModel):
 
 
 # Create separate LLM instances for different purposes
-llm_structured = ChatOpenAI(model="gpt-4o-mini", temperature=0.1, max_tokens=2000)
-# llm_structured = ChatOpenAI(
-#     model="gpt-4o-mini",
-#     temperature=0.1,
-#     max_tokens=2000,
-#     api_key=OPENROUTER_API_KEY,
-#     base_url="https://openrouter.ai/api/v1",
-#     default_headers={
-#         "HTTP-Referer": "https://checkerchain.com/",
-#         "X-Title": "CheckerChain",
-#     },
-# )
+# llm_structured = ChatOpenAI(model="gpt-4o-mini", temperature=0.1, max_tokens=2000)
+llm_structured = ChatOpenAI(
+    model="gpt-4o",
+    temperature=0.1,
+    max_tokens=2000,
+    api_key=OPENROUTER_API_KEY,
+    base_url="https://openrouter.ai/api/v1",
+    default_headers={
+        "HTTP-Referer": "https://checkerchain.com/",
+        "X-Title": "CheckerChain",
+    },
+)
 
 llm_text = ChatOpenAI(model="gpt-4o-mini", temperature=0.3, max_tokens=1000)
 

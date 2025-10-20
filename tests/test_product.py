@@ -12,6 +12,8 @@ import bittensor as bt
 
 miner_preds = {}
 
+bt.logging.set_trace()
+
 
 async def main():
     """
