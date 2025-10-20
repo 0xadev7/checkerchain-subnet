@@ -5,6 +5,8 @@ from langchain_community.document_loaders import WebBaseLoader
 from langchain_community.utilities import GoogleSerperAPIWrapper, SerpAPIWrapper
 from langchain_community.tools import DuckDuckGoSearchResults
 
+import bittensor as bt
+
 from checkerchain.utils.config import (
     SERPAPI_API_KEY,
     SERPER_API_KEY,
@@ -103,6 +105,8 @@ def fetch_web_context(product_name: str, product_url: str | None = None) -> str:
         if len(urls) >= SCRAPE_PER_QUERY_LIMIT:
             break
 
+    bt.logging.info(f"Use these URLs for web context:\n {','.join(urls)}")
+
     pages = []
     for u in urls[:SCRAPE_PER_QUERY_LIMIT]:
         try:
@@ -130,7 +134,8 @@ def web_search(query: str, limit: int = SEARCH_RESULT_LIMIT) -> List[str]:
             urls = [i.get("link") for i in results.get("organic", []) if i.get("link")]
             if urls:
                 return urls[:limit]
-        except Exception:
+        except Exception as e:
+            bt.logging.warning("Error with Google Serper API", e)
             pass
 
     # 2) SerpAPI
@@ -146,13 +151,14 @@ def web_search(query: str, limit: int = SEARCH_RESULT_LIMIT) -> List[str]:
                 ]
             elif isinstance(results, list):
                 urls = [
-                    r.get("link") or r.get("url")
+                    str(r.get("link") or r.get("url"))
                     for r in results
                     if isinstance(r, dict)
                 ]
             if urls:
                 return urls[:limit]
-        except Exception:
+        except Exception as e:
+            bt.logging.warning("Error with Serp API", e)
             pass
 
     # 3) DuckDuckGo (no API key)
@@ -164,7 +170,8 @@ def web_search(query: str, limit: int = SEARCH_RESULT_LIMIT) -> List[str]:
         urls = re.findall(r'https?://[^\s)"]+', raw)
         if urls:
             return urls[:limit]
-    except Exception:
+    except Exception as e:
+        bt.logging.warning("Error with DuckDuckGo API", e)
         pass
 
     return []

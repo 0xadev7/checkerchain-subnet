@@ -389,38 +389,60 @@ async def generate_complete_assessment(product_data: UnreviewedProduct) -> dict:
 {web_ctx or 'No web data.'}
 """.strip()
 
-        prompt = f"""
-Use the context to analyze this Web3/DeFi product and output JSON only.
+        prompt = (
+            prompt
+        ) = f"""
+        Analyze this DeFi/crypto product and provide a complete assessment in JSON format.
 
-**Product**
-- Name: {product_name}
-- Description: {product_description}
-- Category: {product_category}
-- Website: {product_website}
+        **Product Information:**
+        - Name: {product_name}
+        - Description: {product_description}
+        - Website: {product_website}
+        - Category: {product_category}
+        
+        **Context**
+        {combined_context}
 
-**Context**
-{combined_context}
+        **Assessment Requirements:**
+        1. **Score Breakdown (0-10 each):**
+           - project: Project concept and innovation
+           - userbase: User adoption and community
+           - utility: Practical utility and use cases
+           - security: Security measures and audits
+           - team: Team experience and credibility
+           - tokenomics: Token economics and distribution
+           - marketing: Marketing strategy and reach
+           - roadmap: Development roadmap and milestones
+           - clarity: Project clarity and communication
+           - partnerships: Strategic partnerships and collaborations
 
-**Return JSON with:**
-{{
-  "breakdown": {{
-    "project": <float>,
-    "userbase": <float>,
-    "utility": <float>,
-    "security": <float>,
-    "team": <float>,
-    "tokenomics": <float>,
-    "marketing": <float>,
-    "roadmap": <float>,
-    "clarity": <float>,
-    "partnerships": <float>
-  }},
-  "overall_score": <float>,
-  "review": "<max 140 chars>",
-  "keywords": ["excellent","trusted","low-risk"]
-}}
-Respond with ONLY JSON.
-"""
+        2. **Overall Score (0-100):** Weighted average based on breakdown scores
+
+        3. **Review (max 140 chars):** Brief, professional assessment
+
+        4. **Keywords (3-7 items):** Quality-descriptive keywords like "excellent", "trusted", "low-risk", "suspicious", "scam", etc. (NOT technical terms like "blockchain", "crypto", "defi")
+
+        **Response Example (JSON only):**
+        {{
+            "breakdown": {{
+                "project": 8.5,
+                "userbase": 7.0,
+                "utility": 8.0,
+                "security": 9.0,
+                "team": 7.5,
+                "tokenomics": 6.5,
+                "marketing": 8.0,
+                "roadmap": 7.0,
+                "clarity": 8.5,
+                "partnerships": 7.0
+            }},
+            "overall_score": 77.5,
+            "review": "Strong DeFi protocol with excellent security and experienced team. Highly recommended for serious investors.",
+            "keywords": ["excellent", "trusted", "low-risk", "established", "promising"]
+        }}
+
+        Respond with ONLY the JSON object, no additional text.
+        """
 
         bt.logging.info(prompt)
 
