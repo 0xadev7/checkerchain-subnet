@@ -3,13 +3,15 @@ import os, time, math, requests
 import numpy as np
 from typing import Dict, Any, List
 
+import bittensor as bt
+
 from checkerchain.rlhf.online import online_update
 from checkerchain.rlhf.init import initialize_weights_nnls
 from checkerchain.rlhf.constants import N_METRICS, DEFAULT_W
 from checkerchain.rlhf.db_mongo import RLHFMongo
 
 API_URL = os.getenv("CHECKERCHAIN_API", "https://api.checkerchain.com/api/v1/products")
-PAGE_SIZE = int(os.getenv("RLHF_PAGE_SIZE", "100"))
+PAGE_SIZE = int(os.getenv("RLHF_PAGE_SIZE", "30"))
 
 
 def _now_ts() -> float:
@@ -23,15 +25,17 @@ def _page(url: str, page: int, limit: int) -> list[dict]:
     return j["data"]["products"]
 
 
-def fetch_recent_products(limit_pages: int = 5) -> List[dict]:
+def fetch_recent_products() -> List[dict]:
     out: List[dict] = []
-    for p in range(1, limit_pages + 1):
+    p = 1
+    while True:
         items = _page(API_URL, page=p, limit=PAGE_SIZE)
         if not items:
             break
         out.extend(items)
         if len(items) < PAGE_SIZE:
             break
+        p += 1
     return out
 
 
@@ -53,7 +57,6 @@ def run_training_tick(
     huber_delta: float = 0.75,
     half_life_days: int = 14,
     pgd_steps: int = 3,
-    fetch_pages: int = 5,
 ) -> dict:
     """
     1) Fetch recent products (few pages).
@@ -62,7 +65,9 @@ def run_training_tick(
     4) On first run (no weights), do NNLS init over all pairs.
     """
     # Step 1–2: ingest targets from API
-    products = fetch_recent_products(limit_pages=fetch_pages)
+    products = fetch_recent_products()
+    bt.logging.info(f"RLHF Training: Fetched {len(products)} products.")
+
     new_target_ts_max = 0.0
     for p in products:
         if p.get("status") != "reviewed":
@@ -92,6 +97,8 @@ def run_training_tick(
     # Step 3: collect new pairs since last tick
     last_ts = db.get_last_update_ts()
     new_pairs = db.get_new_pairs_since(last_ts)
+
+    bt.logging.info(f"RLHF Training: Found {len(new_pairs)} new products")
     if not new_pairs:
         return {"updated": False, "reason": "no-new-targets"}
 

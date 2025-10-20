@@ -450,8 +450,6 @@ async def generate_complete_assessment(product_data: UnreviewedProduct) -> dict:
         Respond with ONLY the JSON object, no additional text.
         """
 
-        bt.logging.info(prompt)
-
         result = await llm_structured.ainvoke(
             [
                 SystemMessage(
@@ -477,22 +475,11 @@ async def generate_complete_assessment(product_data: UnreviewedProduct) -> dict:
         bt.logging.info("Raw assessment data: ", assessment_data)
         breakdown = dict(assessment_data.get("breakdown", {}))
 
-        try:
-            x = [float(breakdown.get(k, 0.0)) for k in METRICS]
-            db.save_breakdown(
-                product_id=str(product_data.id),
-                review_cycle=int(product_data.currentReviewCycle or 1),
-                x=x,
-                model_version="v1",
-            )
-        except Exception as e:
-            bt.logging.warning(f"[RLHF] save_breakdown failed: {e}")
-
         # persist breakdown for this product + review_cycle
         try:
             x = [float(breakdown.get(k, 0.0)) for k in METRICS]
             db.save_breakdown(
-                product_id=str(product_data.id),
+                product_id=str(product_data._id),
                 review_cycle=int(product_data.currentReviewCycle or 1),
                 x=x,
                 model_version="v1",

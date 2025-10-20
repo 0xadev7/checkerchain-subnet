@@ -145,6 +145,7 @@ def fetch_product_data_with_score(product_id):
                     "description": productData.data.description,
                     "category": productData.data.category,
                     "trustScore": productData.data.trustScore,
+                    "currentReviewCycle": productData.data.currentReviewCycle
                 }
             )
     else:

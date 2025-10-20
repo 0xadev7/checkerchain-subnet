@@ -168,3 +168,5 @@ testing/
 .vscode/settings.json
 
 test_batch.py
+
+rag_vectorestore
