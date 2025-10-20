@@ -22,7 +22,7 @@ def add_to_vector_store(context: str):
     vs.persist()
 
 
-async def retrieve_context_async(query: str, k: int = 4) -> str:
+async def retrieve_context(query: str, k: int = 4) -> str:
     vs = get_vector_store()
     retriever = vs.as_retriever(search_kwargs={"k": k})
     try:
