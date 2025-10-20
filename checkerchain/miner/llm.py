@@ -468,6 +468,8 @@ async def generate_complete_assessment(product_data: UnreviewedProduct) -> dict:
         # Parse the JSON response
         assessment_data = json.loads(response_text)
 
+        bt.logging.info("Raw assessment data: ", assessment_data)
+
         # Validate and structure the response
         validated_response = {
             "score": float(assessment_data.get("overall_score", 0)),
