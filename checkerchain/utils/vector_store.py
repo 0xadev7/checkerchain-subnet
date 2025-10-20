@@ -1,4 +1,5 @@
-from langchain_community.vectorstores import Chroma
+import asyncio
+from langchain_chroma import Chroma
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings
 
@@ -21,8 +22,16 @@ def add_to_vector_store(context: str):
     vs.persist()
 
 
-def retrieve_context(query: str, k: int = 4) -> str:
+async def retrieve_context_async(query: str, k: int = 4) -> str:
     vs = get_vector_store()
     retriever = vs.as_retriever(search_kwargs={"k": k})
-    docs = retriever.get_relevant_documents(query)
-    return "\n".join(d.page_content for d in docs)
+    try:
+        docs = await retriever.ainvoke(query)  # New API
+    except AttributeError:
+        # Fallback to sync call in a thread for older versions
+        loop = asyncio.get_running_loop()
+        docs = await loop.run_in_executor(None, retriever.get_relevant_documents, query)
+    contents = [
+        d.page_content for d in (docs or []) if getattr(d, "page_content", None)
+    ]
+    return "\n".join(contents)

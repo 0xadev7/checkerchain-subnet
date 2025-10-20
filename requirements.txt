@@ -18,3 +18,4 @@ tiktoken
 requests
 duckduckgo-search
 langchain-text-splitters
+langchain-chroma

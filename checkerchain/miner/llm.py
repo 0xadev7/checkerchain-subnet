@@ -361,7 +361,7 @@ async def generate_complete_assessment(product_data: UnreviewedProduct) -> dict:
         product_category = product_data.category
 
         # 1) Retrieve from local vector store
-        local_ctx = retrieve_context(product_name)
+        local_ctx = await retrieve_context(product_name)
 
         # 2) Ingest datasets if empty
         if not local_ctx.strip():
