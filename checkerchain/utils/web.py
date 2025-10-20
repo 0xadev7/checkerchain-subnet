@@ -115,7 +115,8 @@ def fetch_web_context(product_name: str, product_url: str | None = None) -> str:
             ).load()
             for d in docs:
                 pages.append(f"[{u}]\n{d.page_content}")
-        except Exception:
+        except Exception as e:
+            bt.logging.warning(f"Error fetching pages from URL: {u}", e)
             continue
 
     return "\n\n".join(pages)
