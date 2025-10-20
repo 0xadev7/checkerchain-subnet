@@ -27,6 +27,7 @@ dotenv.load_dotenv(override=True)
 
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 # you don't need to worry about these envs
 IS_OWNER = os.getenv("IS_OWNER")
 STATS_SERVER_URL = os.getenv("STATS_SERVER_URL")

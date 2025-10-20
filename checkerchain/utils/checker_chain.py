@@ -10,6 +10,7 @@ from checkerchain.database.actions import (
 )
 from checkerchain.types.checker_chain import (
     ReviewedProduct,
+    ReviewedProductApiResponse,
     ReviewedProductsApiResponse,
     UnreviewedProductApiResponse,
     UnreviewedProductsApiResponse,
@@ -120,6 +121,30 @@ def fetch_product_data(product_id):
                     "url": productData.data.url,
                     "description": productData.data.description,
                     "category": productData.data.category,
+                }
+            )
+    else:
+        bt.logging.error(
+            "Error fetching product data:", response.status_code, response.text
+        )
+        return None
+
+
+def fetch_product_data_with_score(product_id):
+    """Fetch product data from the API using the product ID."""
+    url = f"https://api.checkerchain.com/api/v1/products/{product_id}"
+    response = requests.get(url)
+    if response.status_code == 200:
+        productData = ReviewedProductApiResponse.from_dict(response.json())
+        if hasattr(productData, "data"):
+            return dict_to_namespace(
+                {
+                    "_id": productData.data._id,
+                    "name": productData.data.name,
+                    "url": productData.data.url,
+                    "description": productData.data.description,
+                    "category": productData.data.category,
+                    "trustScore": productData.data.trustScore,
                 }
             )
     else:

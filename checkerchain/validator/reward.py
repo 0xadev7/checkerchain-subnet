@@ -58,7 +58,7 @@ def get_deviation_percentage(prediction: float, actual: float) -> float:
 
 
 async def reward(
-    self: Validator, prediction: MinerPrediction, actual: float, miner_uid: int
+    self: Validator | None, prediction: MinerPrediction, actual: float, miner_uid: int
 ) -> float:
     """
     Enhanced reward function that uses a single OpenAI request to analyze the complete response.
