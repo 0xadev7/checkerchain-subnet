@@ -422,6 +422,8 @@ Use the context to analyze this Web3/DeFi product and output JSON only.
 Respond with ONLY JSON.
 """
 
+        bt.logging.info(prompt)
+
         result = await llm_structured.ainvoke(
             [
                 SystemMessage(
