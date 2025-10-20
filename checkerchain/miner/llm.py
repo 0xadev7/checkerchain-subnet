@@ -446,14 +446,15 @@ async def generate_complete_assessment(product_data: UnreviewedProduct) -> dict:
 
         bt.logging.info(prompt)
 
-        result = await llm_structured.ainvoke(
-            [
-                SystemMessage(
-                    content="You are an AI crypto analyst that grounds answers in retrieved context."
-                ),
-                HumanMessage(content=prompt),
-            ]
-        )
+        # result = await llm_structured.ainvoke(
+        #     [
+        #         SystemMessage(
+        #             content="You are an AI crypto analyst that grounds answers in retrieved context."
+        #         ),
+        #         HumanMessage(content=prompt),
+        #     ]
+        # )
+        result = None
 
         # Extract the text content from the response
         if hasattr(result, "content"):

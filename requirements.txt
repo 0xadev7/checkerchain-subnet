@@ -19,3 +19,6 @@ requests
 duckduckgo-search
 langchain-text-splitters
 langchain-chroma
+beautifulsoup4
+html5lib
+lxml
