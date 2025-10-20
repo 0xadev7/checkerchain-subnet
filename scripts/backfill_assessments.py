@@ -85,18 +85,18 @@ async def assess_one(
     """Call generate_complete_assessment and store breakdown (if available)."""
     async with sem:
         pns = mk_product_ns(prod)
-        key = {"product_id": pns.id, "review_cycle": int(pns.currentReviewCycle)}
+        key = {"product_id": pns._id, "review_cycle": int(pns.currentReviewCycle)}
 
         # Skip if already have breakdown (unless forcing)
         if not save_even_if_exists:
             existing = db.col_breakdowns.find_one(key)
             if existing:
-                return {"id": pns.id, "skipped": "exists"}
+                return {"id": pns._id, "skipped": "exists"}
 
         try:
             await generate_complete_assessment(pns)
         except Exception as e:
-            return {"id": pns.id, "error": f"llm_failed: {e}"}
+            return {"id": pns._id, "error": f"llm_failed: {e}"}
 
 
 # -------- Main --------
