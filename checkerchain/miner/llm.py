@@ -61,7 +61,7 @@ class ReviewScoreSchema(BaseModel):
 # Create separate LLM instances for different purposes
 # llm_structured = ChatOpenAI(model="gpt-4o-mini", temperature=0.1, max_tokens=2000)
 llm_structured = ChatOpenAI(
-    model="gpt-4o",
+    model="gpt-4o-mini",
     temperature=0.1,
     max_tokens=2000,
     api_key=OPENROUTER_API_KEY,
