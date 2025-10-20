@@ -25,7 +25,7 @@ def mk_product_ns(p: dict) -> SimpleNamespace:
     cat = p.get("category", {})
     category_name = cat.get("name") if isinstance(cat, dict) else str(cat)
     return SimpleNamespace(
-        id=pid,
+        _id=pid,
         name=p.get("name", ""),
         description=p.get("description", "") or "",
         url=p.get("url", "") or "",

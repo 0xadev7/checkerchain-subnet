@@ -145,7 +145,7 @@ def fetch_product_data_with_score(product_id):
                     "description": productData.data.description,
                     "category": productData.data.category,
                     "trustScore": productData.data.trustScore,
-                    "currentReviewCycle": productData.data.currentReviewCycle
+                    "currentReviewCycle": productData.data.currentReviewCycle,
                 }
             )
     else:
@@ -185,6 +185,7 @@ def fetch_batch_product_data(product_ids):
                             "url": product.get("url"),
                             "description": product.get("description"),
                             "category": category,
+                            "currentReviewCycle": product.get("currentReviewCycle"),
                         }
                     )
                 )
