@@ -479,7 +479,7 @@ async def generate_complete_assessment(product_data: UnreviewedProduct) -> dict:
         try:
             x = [float(breakdown.get(k, 0.0)) for k in METRICS]
             db.save_breakdown(
-                product_id=str(product_data._id),
+                product_id=str(product_data.id),
                 review_cycle=int(product_data.currentReviewCycle or 1),
                 x=x,
                 model_version="v1",

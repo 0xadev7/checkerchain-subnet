@@ -80,7 +80,6 @@ async def assess_one(
     db: RLHFMongo,
     prod: dict,
     sem: asyncio.Semaphore,
-    dry_run: bool = False,
     save_even_if_exists: bool = False,
 ) -> dict:
     """Call generate_complete_assessment and store breakdown (if available)."""
@@ -95,31 +94,9 @@ async def assess_one(
                 return {"id": pns.id, "skipped": "exists"}
 
         try:
-            resp = await generate_complete_assessment(pns)
+            await generate_complete_assessment(pns)
         except Exception as e:
             return {"id": pns.id, "error": f"llm_failed: {e}"}
-
-        bd = extract_breakdown_from_response(resp)
-        if not bd:
-            return {"id": pns.id, "error": "no_breakdown_in_response"}
-
-        # Normalize x vector
-        x = [float(bd.get(k, 0.0)) for k in METRICS]
-        x = list(np.clip(np.array(x, dtype=float), 0.0, 10.0))
-
-        if dry_run:
-            return {"id": pns.id, "ok": True, "dry_run": True, "x": x}
-
-        try:
-            db.save_breakdown(
-                product_id=pns.id,
-                review_cycle=int(pns.currentReviewCycle),
-                x=x,
-                model_version="v1",
-            )
-            return {"id": pns.id, "ok": True}
-        except Exception as e:
-            return {"id": pns.id, "error": f"save_failed: {e}"}
 
 
 # -------- Main --------
@@ -134,7 +111,6 @@ async def main():
     )
     ap.add_argument("--pages", type=int, default=50, help="Max pages to fetch")
     ap.add_argument("--concurrency", type=int, default=4, help="Concurrent LLM workers")
-    ap.add_argument("--dry-run", action="store_true", help="Do not persist to DB")
     ap.add_argument(
         "--force", action="store_true", help="Recompute/save even if breakdown exists"
     )
@@ -147,10 +123,7 @@ async def main():
         return
 
     sem = asyncio.Semaphore(max(1, args.concurrency))
-    tasks = [
-        assess_one(db, p, sem, dry_run=args.dry_run, save_even_if_exists=args.force)
-        for p in products
-    ]
+    tasks = [assess_one(db, p, sem, save_even_if_exists=args.force) for p in products]
     results: List[dict] = []
     # small batching to avoid giant gather memory spikes
     BATCH = 32
