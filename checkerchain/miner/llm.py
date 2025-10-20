@@ -13,6 +13,12 @@ import time
 from checkerchain.utils.web import fetch_product_dataset, fetch_web_context
 from checkerchain.utils.vector_store import retrieve_context, add_to_vector_store
 
+from checkerchain.rlhf.constants import METRICS
+from checkerchain.rlhf.db_mongo import RLHFMongo
+from checkerchain.rlhf.score import compute_overall_from_breakdown
+
+db = RLHFMongo()
+
 
 class ScoreBreakdown(BaseModel):
     """Detailed breakdown of product review scores."""
@@ -469,15 +475,45 @@ async def generate_complete_assessment(product_data: UnreviewedProduct) -> dict:
         assessment_data = json.loads(response_text)
 
         bt.logging.info("Raw assessment data: ", assessment_data)
+        breakdown = dict(assessment_data.get("breakdown", {}))
 
-        # Validate and structure the response
+        try:
+            x = [float(breakdown.get(k, 0.0)) for k in METRICS]
+            db.save_breakdown(
+                product_id=str(product_data.id),
+                review_cycle=int(product_data.currentReviewCycle or 1),
+                x=x,
+                model_version="v1",
+            )
+        except Exception as e:
+            bt.logging.warning(f"[RLHF] save_breakdown failed: {e}")
+
+        # persist breakdown for this product + review_cycle
+        try:
+            x = [float(breakdown.get(k, 0.0)) for k in METRICS]
+            db.save_breakdown(
+                product_id=str(product_data.id),
+                review_cycle=int(product_data.currentReviewCycle or 1),
+                x=x,
+                model_version="v1",
+            )
+        except Exception as e:
+            bt.logging.warning(f"[RLHF] save_breakdown failed: {e}")
+
+        # compute overall deterministically from learned weights
+        try:
+            w = db.load_weights()  # latest simplex weights
+            overall = compute_overall_from_breakdown(breakdown, w)
+        except Exception as e:
+            bt.logging.warning(f"[RLHF] compute_overall failed (using uniform): {e}")
+            from rlhf.constants import DEFAULT_W
+
+            overall = compute_overall_from_breakdown(breakdown, DEFAULT_W)
+
         validated_response = {
-            "score": float(assessment_data.get("overall_score", 0)),
-            # "review": str(assessment_data.get("review", ""))[:140],
-            "review": str(assessment_data.get("review", "")),  # Ensure max 140 chars
-            "keywords": list(assessment_data.get("keywords", []))[
-                :7
-            ],  # Ensure max 7 keywords
+            "score": float(overall),  # <- final
+            "review": str(assessment_data.get("review", "")),
+            "keywords": list(assessment_data.get("keywords", []))[:7],
         }
 
         return validated_response

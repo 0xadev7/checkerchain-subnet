@@ -22,3 +22,5 @@ langchain-chroma
 beautifulsoup4
 html5lib
 lxml
+pymongo
+scipy
