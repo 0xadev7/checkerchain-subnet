@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 
 import aiohttp
 import numpy as np
+import bittensor as bt
 
 # Your project imports
 # Make sure these resolve based on your repo layout
@@ -95,6 +96,7 @@ async def assess_one(
 
         try:
             await generate_complete_assessment(pns)
+            return {"id": pns._id, "ok": True}
         except Exception as e:
             return {"id": pns._id, "error": f"llm_failed: {e}"}
 
@@ -103,6 +105,8 @@ async def assess_one(
 
 
 async def main():
+    bt.logging.set_trace()
+    
     ap = argparse.ArgumentParser(
         description="Backfill LLM assessments (breakdowns) for reviewed products."
     )
@@ -119,7 +123,7 @@ async def main():
     db = RLHFMongo()
     products = await iter_reviewed_products(args.limit, args.pages)
     if not products:
-        print(json.dumps({"status": "no-products"}))
+        bt.logging.info(json.dumps({"status": "no-products"}))
         return
 
     sem = asyncio.Semaphore(max(1, args.concurrency))
@@ -142,7 +146,7 @@ async def main():
         "errors": len(errors),
         "error_examples": errors[:5],
     }
-    print(json.dumps(summary, indent=2))
+    bt.logging.info(json.dumps(summary, indent=2))
 
 
 if __name__ == "__main__":

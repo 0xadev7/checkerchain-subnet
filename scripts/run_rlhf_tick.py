@@ -1,11 +1,15 @@
 from __future__ import annotations
 import os, sys, json
 
+import bittensor as bt
+
 from checkerchain.rlhf.db_mongo import RLHFMongo
 from checkerchain.rlhf.job import run_training_tick
 
 
 def main():
+    bt.logging.set_trace()
+
     db = RLHFMongo()
     res = run_training_tick(
         db,
@@ -15,7 +19,7 @@ def main():
         half_life_days=int(os.getenv("RLHF_HALF_LIFE_DAYS", "14")),
         pgd_steps=int(os.getenv("RLHF_PGD_STEPS", "3")),
     )
-    print(json.dumps(res))
+    bt.logging.info(json.dumps(res))
 
 
 if __name__ == "__main__":
