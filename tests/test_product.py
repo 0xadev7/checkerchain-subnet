@@ -18,16 +18,16 @@ async def main():
     Uses a single OpenAI request per product to generate score, review, and keywords.
     """
     product_id = "684036c1a26d4eb551b68aff"
-    bt.logging.info(f"Fetching product data for {product_id}")
+    print(f"Fetching product data for {product_id}")
     product = fetch_product_data_with_score(product_id)
-    bt.logging.info("Product:\n", product)
+    print("Product:\n", product)
 
     # Generate assessments for found products
     response = await generate_complete_assessment(product)
-    bt.logging.info("Response:\n", response)
+    print("Response:\n", response)
 
-    task = reward(None, response, product.trustScore, 0)
-    bt.logging.info("Reward:\n", task)
+    task = await reward(None, response, product.trustScore, 0)
+    print("Reward:\n", task)
 
 
 if __name__ == "__main__":
