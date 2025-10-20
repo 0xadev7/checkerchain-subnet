@@ -19,7 +19,6 @@ def add_to_vector_store(context: str):
     docs = splitter.create_documents([context])
     vs = get_vector_store()
     vs.add_documents(docs)
-    vs.persist()
 
 
 async def retrieve_context(query: str, k: int = 4) -> str:
