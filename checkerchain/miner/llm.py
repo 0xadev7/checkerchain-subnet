@@ -1,4 +1,3 @@
-# OpenAI API Key (ensure this is set in env variables or a secure place)
 import bittensor as bt
 from pydantic import BaseModel, Field
 from checkerchain.types.checker_chain import UnreviewedProduct

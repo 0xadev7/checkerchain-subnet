@@ -1,5 +1,5 @@
 from langchain_community.vectorstores import Chroma
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings
 
 from checkerchain.utils.config import DB_PATH, EMBED_MODEL, OPENAI_API_KEY
