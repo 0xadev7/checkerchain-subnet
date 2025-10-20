@@ -3,7 +3,7 @@ import bittensor as bt
 from pydantic import BaseModel, Field
 from checkerchain.types.checker_chain import UnreviewedProduct
 from langchain_openai import ChatOpenAI
-from langchain.schema import SystemMessage, HumanMessage
+from langchain_core.messages import SystemMessage, HumanMessage
 from checkerchain.utils.config import OPENAI_API_KEY, OPENROUTER_API_KEY
 from typing import List
 import json

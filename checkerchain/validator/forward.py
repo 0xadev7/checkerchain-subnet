@@ -41,7 +41,6 @@ import requests
 from checkerchain.utils.uids import get_filtered_uids
 from checkerchain.utils.filter_miners import filter_duplicate_predictions
 from checkerchain.miner.llm import create_llm
-from langchain.schema import SystemMessage, HumanMessage
 
 
 async def forward(self: Validator):
