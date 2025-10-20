@@ -11,6 +11,9 @@ import re
 from checkerchain.database.model import MinerPrediction
 import time
 
+from checkerchain.utils.web import fetch_product_dataset, fetch_web_context
+from checkerchain.utils.vector_store import retrieve_context, add_to_vector_store
+
 
 class ScoreBreakdown(BaseModel):
     """Detailed breakdown of product review scores."""
@@ -352,71 +355,78 @@ async def generate_quality_keywords_with_score(
 
 
 async def generate_complete_assessment(product_data: UnreviewedProduct) -> dict:
-    """
-    Generate a complete product assessment (score, review, keywords) in a single OpenAI request.
-    Returns a structured JSON response.
-    """
     try:
-        # Prepare product information
         product_name = product_data.name
         product_description = product_data.description
         product_website = product_data.url
         product_category = product_data.category
 
+        # 1) Retrieve from local vector store
+        local_ctx = retrieve_context(product_name)
+
+        # 2) Ingest datasets if empty
+        if not local_ctx.strip():
+            bt.logging.info(
+                f"[RAG] No local context. Downloading datasets for {product_name} ..."
+            )
+            ds_ctx = fetch_product_dataset(
+                product_name,
+                product_website,
+            )
+            if ds_ctx:
+                add_to_vector_store(ds_ctx)
+            local_ctx = ds_ctx or ""
+
+        # 3) Web context via multi-fallback search (Tavily-free)
+        web_ctx = fetch_web_context(product_name, product_website)
+        if web_ctx:
+            add_to_vector_store(web_ctx)  # cache for future runs
+
+        combined_context = f"""
+### LOCAL DATA ###
+{local_ctx or 'No local data.'}
+
+### WEB DATA ###
+{web_ctx or 'No web data.'}
+""".strip()
+
         prompt = f"""
-        Analyze this DeFi/crypto product and provide a complete assessment in JSON format.
+Use the context to analyze this Web3/DeFi product and output JSON only.
 
-        **Product Information:**
-        - Name: {product_name}
-        - Description: {product_description}
-        - Website: {product_website}
-        - Category: {product_category}
+**Product**
+- Name: {product_name}
+- Description: {product_description}
+- Category: {product_category}
+- Website: {product_website}
 
-        **Assessment Requirements:**
-        1. **Score Breakdown (0-10 each):**
-           - project: Project concept and innovation
-           - userbase: User adoption and community
-           - utility: Practical utility and use cases
-           - security: Security measures and audits
-           - team: Team experience and credibility
-           - tokenomics: Token economics and distribution
-           - marketing: Marketing strategy and reach
-           - roadmap: Development roadmap and milestones
-           - clarity: Project clarity and communication
-           - partnerships: Strategic partnerships and collaborations
+**Context**
+{combined_context}
 
-        2. **Overall Score (0-100):** Weighted average based on breakdown scores
-
-        3. **Review (max 140 chars):** Brief, professional assessment
-
-        4. **Keywords (3-7 items):** Quality-descriptive keywords like "excellent", "trusted", "low-risk", "suspicious", "scam", etc. (NOT technical terms like "blockchain", "crypto", "defi")
-
-        **Response Format (JSON only):**
-        {{
-            "breakdown": {{
-                "project": 8.5,
-                "userbase": 7.0,
-                "utility": 8.0,
-                "security": 9.0,
-                "team": 7.5,
-                "tokenomics": 6.5,
-                "marketing": 8.0,
-                "roadmap": 7.0,
-                "clarity": 8.5,
-                "partnerships": 7.0
-            }},
-            "overall_score": 77.5,
-            "review": "Strong DeFi protocol with excellent security and experienced team. Highly recommended for serious investors.",
-            "keywords": ["excellent", "trusted", "low-risk", "established", "promising"]
-        }}
-
-        Respond with ONLY the JSON object, no additional text.
-        """
+**Return JSON with:**
+{{
+  "breakdown": {{
+    "project": <float>,
+    "userbase": <float>,
+    "utility": <float>,
+    "security": <float>,
+    "team": <float>,
+    "tokenomics": <float>,
+    "marketing": <float>,
+    "roadmap": <float>,
+    "clarity": <float>,
+    "partnerships": <float>
+  }},
+  "overall_score": <float>,
+  "review": "<max 140 chars>",
+  "keywords": ["excellent","trusted","low-risk"]
+}}
+Respond with ONLY JSON.
+"""
 
         result = await llm_structured.ainvoke(
             [
                 SystemMessage(
-                    content="You are an expert DeFi/crypto analyst. Provide accurate, professional assessments in JSON format only."
+                    content="You are an AI crypto analyst that grounds answers in retrieved context."
                 ),
                 HumanMessage(content=prompt),
             ]

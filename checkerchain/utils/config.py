@@ -22,12 +22,26 @@ import argparse
 import bittensor as bt
 from .logging import setup_events_logger
 import dotenv
+from pathlib import Path
 
 dotenv.load_dotenv(override=True)
 
 
+# Vector Store
+DB_PATH = Path("rag_vectorstore")
+EMBED_MODEL = "text-embedding-3-large"
+
+# LLM
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+
+# Web Scrap
+SERPER_API_KEY = os.getenv("SERPER_API_KEY")          # google serper
+SERPAPI_API_KEY = os.getenv("SERPAPI_API_KEY")        # serpapi.com
+REQUEST_TIMEOUT_SECS = 10
+SEARCH_RESULT_LIMIT = 5
+SCRAPE_PER_QUERY_LIMIT = 4
+
 # you don't need to worry about these envs
 IS_OWNER = os.getenv("IS_OWNER")
 STATS_SERVER_URL = os.getenv("STATS_SERVER_URL")
