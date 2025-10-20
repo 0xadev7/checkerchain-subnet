@@ -1,19 +1,38 @@
 import asyncio
+import chromadb
 from langchain_chroma import Chroma
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings
 
-from checkerchain.utils.config import DB_PATH, EMBED_MODEL, OPENAI_API_KEY
+from checkerchain.utils.config import (
+    DB_PATH,
+    EMBED_MODEL,
+    COLLECTION_NAME,
+    OPENAI_API_KEY,
+)
 
 
 def get_vector_store():
-    embeddings = OpenAIEmbeddings(model=EMBED_MODEL, openai_api_key=OPENAI_API_KEY)
+    """
+    Create/load a persistent Chroma collection using a PersistentClient.
+    No explicit .persist() is needed; persistence is handled by the client.
+    """
     DB_PATH.mkdir(parents=True, exist_ok=True)
-    return Chroma(persist_directory=str(DB_PATH), embedding_function=embeddings)
+    client = chromadb.PersistentClient(path=str(DB_PATH))
+    embeddings = OpenAIEmbeddings(model=EMBED_MODEL, openai_api_key=OPENAI_API_KEY)
+    vs = Chroma(
+        client=client,
+        collection_name=COLLECTION_NAME,
+        embedding_function=embeddings,
+    )
+    return vs
 
 
 def add_to_vector_store(context: str):
-    if not context.strip():
+    """
+    Add text to the persistent vector store.
+    """
+    if not context or not context.strip():
         return
     splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=120)
     docs = splitter.create_documents([context])
@@ -22,6 +41,9 @@ def add_to_vector_store(context: str):
 
 
 async def retrieve_context(query: str, k: int = 4) -> str:
+    """
+    Retrieve top-k relevant docs; supports new Runnable retrievers.
+    """
     vs = get_vector_store()
     retriever = vs.as_retriever(search_kwargs={"k": k})
     try:

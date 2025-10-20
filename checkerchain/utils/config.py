@@ -30,6 +30,7 @@ dotenv.load_dotenv(override=True)
 # Vector Store
 DB_PATH = Path("rag_vectorstore")
 EMBED_MODEL = "text-embedding-3-large"
+COLLECTION_NAME = "checkerchain_rag"
 
 # LLM
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
