@@ -4,7 +4,7 @@ import asyncio
 from typing import Dict, Any, List, Optional
 
 from langchain_core.messages import SystemMessage, HumanMessage
-from pydantic import BaseModel, Field, conlist, root_validator, ValidationError
+from pydantic import BaseModel, Field, conlist, model_validator, ValidationError
 
 from checkerchain.database.mongo import METRICS
 
@@ -24,7 +24,7 @@ class Assessment(BaseModel):
     review: str = Field(max_length=140)
     keywords: conlist(str, min_length=3, max_length=7)
 
-    @root_validator
+    @model_validator
     def _must_have_all_metrics(cls, values):
         bk = values.get("breakdown", {})
         missing = [m for m in METRICS if m not in bk]
