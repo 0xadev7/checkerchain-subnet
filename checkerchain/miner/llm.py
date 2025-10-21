@@ -66,10 +66,22 @@ class ReviewScoreSchema(BaseModel):
 
 # Create separate LLM instances for different purposes
 # llm_structured = ChatOpenAI(model="gpt-4o-mini", temperature=0.1, max_tokens=2000)
-llm_structured = ChatOpenAI(
+llm_small = ChatOpenAI(
     model="gpt-4o-mini",
     temperature=0.1,
     max_tokens=2000,
+    api_key=OPENROUTER_API_KEY,
+    base_url="https://openrouter.ai/api/v1",
+    default_headers={
+        "HTTP-Referer": "https://checkerchain.com/",
+        "X-Title": "CheckerChain",
+    },
+)
+
+llm_big = ChatOpenAI(
+    model="gpt-4o",
+    temperature=0.7,
+    max_tokens=1000,
     api_key=OPENROUTER_API_KEY,
     base_url="https://openrouter.ai/api/v1",
     default_headers={
@@ -407,16 +419,16 @@ async def generate_complete_assessment(product_data: UnreviewedProduct) -> dict:
 
         # 1) Build compact fact pack (use a SMALL model, e.g., gpt-4o-mini / similar)
         fact_pack = await build_fact_pack(
-            llm_small=llm_structured, docs=docs, budget_tokens=2000
+            llm_small=llm_small, docs=docs, budget_tokens=2000
         )
 
         # 2) Run assessor (use your big model)
         parsed = await run_assessor(
-            llm_big=llm_structured, product=product_data, fact_pack=fact_pack
+            llm_big=llm_big, product=product_data, fact_pack=fact_pack
         )
-        
+
         bt.logging.info(f"[LLM] Parsed response: ", parsed)
- 
+
         # 3) Persist + score
         breakdown = {k: v["score"] for k, v in parsed["breakdown"].items()}
         x = [float(breakdown.get(k, 0.0)) for k in METRICS]
