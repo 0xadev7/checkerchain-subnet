@@ -60,7 +60,7 @@ async def assess_product(p: Dict[str, Any]):
     **if** a label already exists. If label comes later, a later run will join it then.
     """
     try:
-        await generate_complete_assessment(p)
+        await generate_complete_assessment(SimpleProduct(p))
     except Exception as e:
         print(f"[assess] LLM failed for {p['id']}: {e}")
 
