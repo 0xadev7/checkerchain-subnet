@@ -60,17 +60,22 @@ async def assess_product(p: Dict[str, Any]):
     into DB. We’ll wait a moment and then read the breakdown back to mirror into cc_datasets
     **if** a label already exists. If label comes later, a later run will join it then.
     """
-    try:
-        await generate_complete_assessment(SimpleProduct(p))
-    except Exception as e:
-        bt.logging.error(f"[assess] LLM failed for {p['id']}: {e}")
 
     # Try to read the saved breakdown (features) from cc_assessments:
     doc = assess_col.find_one(
         {"productId": p["id"], "reviewCycle": int(p.get("currentReviewCycle") or 1)}
     )
     if not doc:
-        return
+        try:
+            await generate_complete_assessment(SimpleProduct(p))
+        except Exception as e:
+            bt.logging.error(f"[assess] LLM failed for {p['id']}: {e}")
+
+        doc = assess_col.find_one(
+            {"productId": p["id"], "reviewCycle": int(p.get("currentReviewCycle") or 1)}
+        )
+        if not doc:
+            return
 
     X = [float(doc.get("breakdown", {}).get(k, 0.0)) for k in METRICS]
 
