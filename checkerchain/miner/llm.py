@@ -489,8 +489,11 @@ async def generate_complete_assessment(product_data: UnreviewedProduct) -> dict:
 
         # compute overall deterministically from learned weights
         try:
-            w = db.load_weights()  # latest simplex weights
-            overall = compute_overall_from_breakdown(breakdown, w)
+            w = db.load_weights()
+            meta = db.col_weights.find_one(sort=[("created_at", -1)])["meta"]
+            beta0 = float(meta.get("b0", 0.0))
+            beta1 = float(meta.get("b1", 1.0))
+            overall = compute_overall_from_breakdown(breakdown, w, beta0, beta1)
         except Exception as e:
             bt.logging.warning(f"[RLHF] compute_overall failed (using uniform): {e}")
             from rlhf.constants import DEFAULT_W
