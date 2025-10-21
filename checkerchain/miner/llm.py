@@ -12,13 +12,8 @@ import time
 
 from checkerchain.utils.web import fetch_product_dataset, fetch_web_context
 from checkerchain.utils.vector_store import retrieve_context, add_to_vector_store
-
-from checkerchain.rlhf.constants import METRICS
-from checkerchain.rlhf.db_mongo import RLHFMongo
-from checkerchain.rlhf.score import compute_overall_from_breakdown
-from checkerchain.rlhf.constants import DEFAULT_W
-
-db = RLHFMongo()
+from checkerchain.database.mongo import METRICS, save_breakdown
+from checkerchain.model.gb_inference import predict_from_breakdown
 
 
 class ScoreBreakdown(BaseModel):
@@ -475,42 +470,33 @@ async def generate_complete_assessment(product_data: UnreviewedProduct) -> dict:
 
         bt.logging.info("Raw assessment data: ", assessment_data)
         breakdown = dict(assessment_data.get("breakdown", {}))
+        x = [float(breakdown.get(k, 0.0)) for k in METRICS]
 
-        # persist breakdown for this product + review_cycle
+        # persist breakdown
         try:
-            x = [float(breakdown.get(k, 0.0)) for k in METRICS]
-            db.save_breakdown(
+            save_breakdown(
                 product_id=str(product_data._id),
                 review_cycle=int(product_data.currentReviewCycle or 1),
                 x=x,
-                model_version="v1",
+                model_version="gb_v1",
             )
         except Exception as e:
-            bt.logging.warning(f"[RLHF] save_breakdown failed: {e}")
+            bt.logging.warning(f"[LLM] save_breakdown failed: {e}")
 
-        # compute overall deterministically from learned weights
         try:
-            w_doc = db.load_latest_weights_doc()  # grab raw doc to read meta
-            if w_doc:
-                w = w_doc.get("w", DEFAULT_W)
-                meta = w_doc.get("meta", {}) or {}
-                b0 = float(meta.get("b0", 0.0))
-                b1 = float(meta.get("b1", 1.0))
-            else:
-                w, b0, b1 = DEFAULT_W, 0.0, 1.0
-
-            overall = compute_overall_from_breakdown(breakdown, w, beta0=b0, beta1=b1)
+            overall = predict_from_breakdown(breakdown)
         except Exception as e:
-            bt.logging.warning(f"[RLHF] compute_overall failed (using uniform): {e}")
-
-            overall = compute_overall_from_breakdown(breakdown, DEFAULT_W)
+            bt.logging.warning(
+                f"[LLM] GB inference not available ({e}); falling back to uniform mean."
+            )
+            # simple fallback
+            overall = sum(x) / len(x) * 10.0  # 0..10 -> 0..100
 
         validated_response = {
-            "score": float(overall),  # <- final
+            "score": float(overall),
             "review": str(assessment_data.get("review", "")),
             "keywords": list(assessment_data.get("keywords", []))[:7],
         }
-
         return validated_response
 
     except Exception as e:
