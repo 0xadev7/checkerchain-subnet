@@ -3,19 +3,7 @@ from typing import Dict, List, Tuple
 import numpy as np
 import pandas as pd
 
-# Keep in sync with db.METRICS
-BASE_METRICS = [
-    "project",
-    "userbase",
-    "utility",
-    "security",
-    "team",
-    "tokenomics",
-    "marketing",
-    "roadmap",
-    "clarity",
-    "partnerships",
-]
+from checkerchain.database.mongo import METRICS
 
 
 def fe_names() -> List[str]:
@@ -29,11 +17,11 @@ def fe_names() -> List[str]:
         "tokenomics_userbase",
         "security_roadmap",
     ]
-    return BASE_METRICS + extra
+    return METRICS + extra
 
 
 def _to_df(X_base: np.ndarray) -> pd.DataFrame:
-    X_df = pd.DataFrame(X_base, columns=BASE_METRICS).astype(float)
+    X_df = pd.DataFrame(X_base, columns=METRICS).astype(float)
     # Derived
     X_df["mean_score"] = X_df.mean(axis=1)
     X_df["std_score"] = X_df.std(axis=1)
@@ -53,6 +41,6 @@ def fe_transform_matrix(X_base: np.ndarray) -> Tuple[np.ndarray, List[str]]:
 
 
 def fe_transform_one(breakdown: Dict[str, float]) -> Tuple[np.ndarray, List[str]]:
-    x = np.array([[float(breakdown.get(k, 0.0)) for k in BASE_METRICS]], dtype=float)
+    x = np.array([[float(breakdown.get(k, 0.0)) for k in METRICS]], dtype=float)
     X, names = fe_transform_matrix(x)
     return X[0], names
