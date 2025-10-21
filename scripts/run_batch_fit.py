@@ -16,7 +16,7 @@ def main():
     y = np.array([r[1] for r in rows])
 
     w, b0, b1, obj = fit_weights_bias_scale(
-        X, y, huber_delta=3.0, lambda_w_l2=1e-3, lambda_w_tv=0.0
+        X, y, huber_delta=3.0, lambda_u_l2=1e-3, lambda_u_tv=0.0
     )
     # persist together
     db.save_weights(
