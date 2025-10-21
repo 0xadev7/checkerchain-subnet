@@ -24,13 +24,13 @@ class Assessment(BaseModel):
     review: str = Field(max_length=140)
     keywords: conlist(str, min_length=3, max_length=7)
 
-    @model_validator
-    def _must_have_all_metrics(cls, values):
-        bk = values.get("breakdown", {})
-        missing = [m for m in METRICS if m not in bk]
+    @model_validator(mode="after")
+    def check_all_metrics(self) -> "Assessment":
+        """Ensure all 10 required metrics are present."""
+        missing = [m for m in METRICS if m not in self.breakdown]
         if missing:
             raise ValueError(f"Missing required metrics: {missing}")
-        return values
+        return self
 
 
 # -------------------- Prompts --------------------
