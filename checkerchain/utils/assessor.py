@@ -5,6 +5,7 @@ from typing import Dict, Any, List, Optional
 
 from langchain_core.messages import SystemMessage, HumanMessage
 from pydantic import BaseModel, Field, conlist, model_validator, ValidationError
+import bittensor as bt
 
 from checkerchain.database.mongo import METRICS
 
@@ -183,6 +184,7 @@ async def _ainvoke_json(
     llm, system: str, user: str, retries: int = 2
 ) -> Dict[str, Any]:
     last_err = None
+    bt.logging.info(f"LLM Assessment:\nSYSTEM: {system}\nUSER: {user}")
     for attempt in range(retries + 1):
         try:
             res = await llm.ainvoke(
