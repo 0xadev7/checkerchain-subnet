@@ -40,9 +40,9 @@ def remove_value_outliers(X: np.ndarray, y: np.ndarray, low=1, high=99):
 
 
 def sample_param() -> Dict[str, Any]:
-    # LightGBM search space (slightly tightened, quiet logs)
     return {
-        "objective": "regression_l1",            # MAE
+        # USE L2 here so monotone_constraints are allowed
+        "objective": "regression",  # L2 (supports monotone_constraints)
         "learning_rate": 10 ** random.uniform(-2.0, -1.0),  # 0.01..0.1
         "n_estimators": random.randint(800, 2200),
         "num_leaves": random.randint(16, 64),
@@ -65,11 +65,24 @@ def build_monotone_constraints(cols: List[str]) -> List[int]:
     # dispersion (std_score) should be negative.
     positive = {
         # base
-        "project","userbase","utility","security","team","tokenomics",
-        "marketing","roadmap","clarity","partnerships",
+        "project",
+        "userbase",
+        "utility",
+        "security",
+        "team",
+        "tokenomics",
+        "marketing",
+        "roadmap",
+        "clarity",
+        "partnerships",
         # engineered positives
-        "mean_score","security_team","utility_userbase","marketing_partnerships",
-        "clarity_roadmap","tokenomics_userbase","security_roadmap",
+        "mean_score",
+        "security_team",
+        "utility_userbase",
+        "marketing_partnerships",
+        "clarity_roadmap",
+        "tokenomics_userbase",
+        "security_roadmap",
     }
     negative = {"std_score"}
     mc: List[int] = []
@@ -104,7 +117,8 @@ def cv_score_params(
 
         model = lgb.LGBMRegressor(**params_local)
         model.fit(
-            X_tr, y_tr,
+            X_tr,
+            y_tr,
             eval_set=[(X_va, y_va)],
             eval_metric="mae",
             callbacks=[
@@ -189,7 +203,8 @@ def train_and_register():
 
     final = lgb.LGBMRegressor(**final_params)
     final.fit(
-        X_tr, y_tr,
+        X_tr,
+        y_tr,
         eval_set=[(X_va, y_va)],
         eval_metric="mae",
         callbacks=[
@@ -202,6 +217,7 @@ def train_and_register():
 
     # Serialize
     import joblib, io
+
     buf = io.BytesIO()
     joblib.dump(final, buf)
     model_blob = buf.getvalue()
@@ -210,8 +226,8 @@ def train_and_register():
     doc = {
         "createdAt": time.time(),
         "algo": "lightgbm.LGBMRegressor",
-        "feature_order": feat_names,       # engineered columns used
-        "base_feature_order": METRICS,     # original 10 for sanity
+        "feature_order": feat_names,  # engineered columns used
+        "base_feature_order": METRICS,  # original 10 for sanity
         "metrics": {
             "cv_mae": float(best["mae"]),
             "cv_std": float(best["std"]),
