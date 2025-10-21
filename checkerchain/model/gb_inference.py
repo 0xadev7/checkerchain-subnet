@@ -3,7 +3,8 @@ import io
 from typing import Dict, Any, List
 from joblib import load
 from checkerchain.database.mongo import models_col
-from fe import fe_transform_one  # <-- NEW
+
+from checkerchain.model.fe import fe_transform_one
 
 _cached = {"model": None, "feature_order": None, "createdAt": None}
 
