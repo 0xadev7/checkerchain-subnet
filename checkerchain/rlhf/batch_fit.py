@@ -2,7 +2,7 @@ import numpy as np
 import cvxpy as cp
 
 
-def fit_weights_bias_scale_convex(
+def fit_weights_bias_scale(
     X_10: np.ndarray,  # (N, D) features on ~0..10
     y_100: np.ndarray,  # (N,)    targets on 0..100
     huber_delta: float = 2.0,
