@@ -1,14 +1,16 @@
 import numpy as np, json
+import bittensor as bt
 
 from checkerchain.rlhf.db_mongo import RLHFMongo
 from checkerchain.rlhf.batch_fit import fit_weights_bias_scale
 
 
 def main():
+    bt.logging.set_trace()
     db = RLHFMongo()
     rows = db.get_all_breakdowns_with_targets()  # [(x10, y100, ts)]
     if len(rows) < 50:
-        print(json.dumps({"status": "not-enough-data", "n": len(rows)}))
+        bt.logging.info(json.dumps({"status": "not-enough-data", "n": len(rows)}))
         return
     X = np.stack([r[0] for r in rows])
     y = np.array([r[1] for r in rows])
@@ -21,7 +23,7 @@ def main():
         list(w),
         {"reason": "batch_fit", "b0": b0, "b1": b1, "obj": obj, "n": int(len(rows))},
     )
-    print(
+    bt.logging.info(
         json.dumps({"status": "ok", "b0": b0, "b1": b1, "obj": obj, "weights": list(w)})
     )
 
