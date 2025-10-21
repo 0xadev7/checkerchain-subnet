@@ -4,6 +4,7 @@ from typing import Dict, Any, List
 import requests
 from tenacity import retry, stop_after_attempt, wait_exponential
 from dotenv import load_dotenv
+import bittensor as bt
 
 from checkerchain.database.mongo import (
     raw_col,
@@ -62,7 +63,7 @@ async def assess_product(p: Dict[str, Any]):
     try:
         await generate_complete_assessment(SimpleProduct(p))
     except Exception as e:
-        print(f"[assess] LLM failed for {p['id']}: {e}")
+        bt.logging.error(f"[assess] LLM failed for {p['id']}: {e}")
 
     # Try to read the saved breakdown (features) from cc_assessments:
     doc = assess_col.find_one(
@@ -112,7 +113,7 @@ async def main():
     first = fetch_page(1, limit=1)
     total = first["data"]["total"]
     pages = math.ceil(total / PAGE_SIZE)
-    print(f"Found total={total}, pages={pages}")
+    bt.logging.info(f"Found total={total}, pages={pages}")
 
     for page in range(1, pages + 1):
         data = fetch_page(page, PAGE_SIZE)
@@ -126,8 +127,9 @@ async def main():
         await asyncio.gather(*tasks)
 
     upsert_meta("last_backfill_run", time.time())
-    print("[DONE] Ingestion + assessment complete.")
+    bt.logging.info("[DONE] Ingestion + assessment complete.")
 
 
 if __name__ == "__main__":
+    bt.logging.set_trace()
     asyncio.run(main())

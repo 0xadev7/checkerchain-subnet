@@ -7,6 +7,7 @@ from joblib import dump
 from sklearn.metrics import mean_absolute_error
 from sklearn.model_selection import KFold, train_test_split
 import lightgbm as lgb
+import bittensor as bt
 
 from checkerchain.database.mongo import (
     dataset_col,
@@ -84,7 +85,7 @@ def train_and_register():
     ensure_indexes()
     X_base, y = load_xy_full()
     if len(y) < 100:
-        print(f"Not enough rows to train (have {len(y)}).")
+        bt.logging.info(f"Not enough rows to train (have {len(y)}).")
         return
 
     # Optional: clamp label outliers (helps stability)
@@ -98,14 +99,16 @@ def train_and_register():
     for i in range(N_PARAM_SAMPLES):
         params = sample_param()
         cv_mae, cv_std = cv_score_params(X, y, params)
-        print(
+        bt.logging.info(
             f"[{i+1:02d}/{N_PARAM_SAMPLES}] MAE={cv_mae:.3f} (±{cv_std:.3f}) params={params}"
         )
         if cv_mae < best["mae"]:
             best = {"mae": cv_mae, "std": cv_std, "params": params}
 
-    print(f"\nBest CV MAE={best['mae']:.3f} (±{best['std']:.3f}) with params:")
-    print(best["params"])
+    bt.logging.info(
+        f"\nBest CV MAE={best['mae']:.3f} (±{best['std']:.3f}) with params:"
+    )
+    bt.logging.info(best["params"])
 
     # Final refit with small hold-out for a realistic val
     X_tr, X_va, y_tr, y_va = train_test_split(
@@ -147,12 +150,13 @@ def train_and_register():
         "joblib_blob": model_blob,
     }
     models_col.insert_one(doc)
-    print(
+    bt.logging.info(
         f"[OK] Stored tuned model. CV_MAE={best['mae']:.3f}, VAL_MAE={val_mae:.3f}, rows={len(y)}"
     )
 
 
 if __name__ == "__main__":
+    bt.logging.set_trace()
     random.seed(RANDOM_STATE)
     np.random.seed(RANDOM_STATE)
     train_and_register()

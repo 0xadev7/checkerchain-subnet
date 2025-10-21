@@ -1,5 +1,6 @@
 import time
 import subprocess
+import bittensor as bt
 
 from checkerchain.database.mongo import dataset_col, get_meta, upsert_meta
 
@@ -15,11 +16,12 @@ def main():
         last_n = get_meta("last_train_rowcount", 0) or 0
         n = count_rows()
         if n - int(last_n) >= MIN_NEW_ROWS:
-            print(f"[watch] New rows {n-last_n}; retraining...")
+            bt.logging.info(f"[watch] New rows {n-last_n}; retraining...")
             subprocess.run(["python", "train_gb.py"], check=False)
             upsert_meta("last_train_rowcount", n)
         time.sleep(900)  # 15 min
 
 
 if __name__ == "__main__":
+    bt.logging.set_trace()
     main()
