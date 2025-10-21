@@ -12,7 +12,7 @@ import time
 
 from checkerchain.utils.assessor import run_assessor
 from checkerchain.database.mongo import METRICS, save_breakdown
-from checkerchain.model.gb_inference import predict_from_breakdown
+from checkerchain.model.inference import predict_from_breakdown
 from checkerchain.utils.web import fetch_product_dataset, fetch_web_context
 from checkerchain.utils.vector_store import retrieve_context, add_to_vector_store
 from checkerchain.utils.build_fact_pack import build_fact_pack

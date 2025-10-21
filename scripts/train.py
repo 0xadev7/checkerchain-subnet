@@ -172,7 +172,7 @@ def train_and_register():
         bt.logging.info(
             f"[{i+1:02d}/{N_PARAM_SAMPLES}] MAE={cv_mae:.3f} (±{cv_std:.3f}) params={params}"
         )
-        if cv_mae < best["mae"]]:
+        if cv_mae < best["mae"]:
             best = {"mae": cv_mae, "std": cv_std, "params": params}
 
     bt.logging.info(
