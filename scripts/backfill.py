@@ -66,6 +66,9 @@ async def assess_product(p: Dict[str, Any]):
         {"productId": p["id"], "reviewCycle": int(p.get("currentReviewCycle") or 1)}
     )
     if not doc:
+        bt.logging.info(
+            f"[Backfill] Generating assessment using LLM for product {p['id']}"
+        )
         try:
             await generate_complete_assessment(SimpleProduct(p))
         except Exception as e:
