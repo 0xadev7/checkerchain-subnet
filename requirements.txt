@@ -32,3 +32,5 @@ tenacity>=8
 python-dotenv
 google-search-results
 ddgs
+lightgbm
+pandas

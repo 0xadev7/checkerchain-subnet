@@ -10,10 +10,12 @@ import re
 from checkerchain.database.model import MinerPrediction
 import time
 
-from checkerchain.utils.web import fetch_product_dataset, fetch_web_context
-from checkerchain.utils.vector_store import retrieve_context, add_to_vector_store
+from checkerchain.utils.assessor import run_assessor
 from checkerchain.database.mongo import METRICS, save_breakdown
 from checkerchain.model.gb_inference import predict_from_breakdown
+from checkerchain.utils.web import fetch_product_dataset, fetch_web_context
+from checkerchain.utils.vector_store import retrieve_context, add_to_vector_store
+from checkerchain.utils.build_fact_pack import build_fact_pack
 
 
 class ScoreBreakdown(BaseModel):
@@ -358,9 +360,7 @@ async def generate_quality_keywords_with_score(
 async def generate_complete_assessment(product_data: UnreviewedProduct) -> dict:
     try:
         product_name = product_data.name
-        product_description = product_data.description
         product_website = product_data.url
-        product_category = product_data.category
 
         # 1) Retrieve from local vector store
         local_ctx = await retrieve_context(product_name)
@@ -383,96 +383,41 @@ async def generate_complete_assessment(product_data: UnreviewedProduct) -> dict:
         if web_ctx:
             add_to_vector_store(web_ctx)  # cache for future runs
 
-        combined_context = f"""
-### LOCAL DATA ###
-{local_ctx or 'No local data.'}
+        # 0) Build docs for Evidence Builder
+        docs = []
+        if local_ctx:
+            docs.append(
+                {
+                    "id": "local-0",
+                    "url": "local://vectorstore",
+                    "title": "Local Context",
+                    "text": local_ctx,
+                }
+            )
+        if web_ctx:
+            # if you already have per-page results, loop them; else treat the whole web_ctx as one doc
+            docs.append(
+                {
+                    "id": "web-0",
+                    "url": product_website or "",
+                    "title": product_name,
+                    "text": web_ctx,
+                }
+            )
 
-### WEB DATA ###
-{web_ctx or 'No web data.'}
-""".strip()
-
-        prompt = (
-            prompt
-        ) = f"""
-        Analyze this DeFi/crypto product and provide a complete assessment in JSON format.
-
-        **Product Information:**
-        - Name: {product_name}
-        - Description: {product_description}
-        - Website: {product_website}
-        - Category: {product_category}
-        
-        **Context**
-        {combined_context}
-
-        **Assessment Requirements:**
-        1. **Score Breakdown (0-10 each):**
-           - project: Project concept and innovation
-           - userbase: User adoption and community
-           - utility: Practical utility and use cases
-           - security: Security measures and audits
-           - team: Team experience and credibility
-           - tokenomics: Token economics and distribution
-           - marketing: Marketing strategy and reach
-           - roadmap: Development roadmap and milestones
-           - clarity: Project clarity and communication
-           - partnerships: Strategic partnerships and collaborations
-
-        2. **Overall Score (0-100):** Weighted average based on breakdown scores
-
-        3. **Review (max 140 chars):** Brief, professional assessment
-
-        4. **Keywords (3-7 items):** Quality-descriptive keywords like "excellent", "trusted", "low-risk", "suspicious", "scam", etc. (NOT technical terms like "blockchain", "crypto", "defi")
-
-        **Response Example (JSON only):**
-        {{
-            "breakdown": {{
-                "project": 8.5,
-                "userbase": 7.0,
-                "utility": 8.0,
-                "security": 9.0,
-                "team": 7.5,
-                "tokenomics": 6.5,
-                "marketing": 8.0,
-                "roadmap": 7.0,
-                "clarity": 8.5,
-                "partnerships": 7.0
-            }},
-            "overall_score": 77.5,
-            "review": "Strong DeFi protocol with excellent security and experienced team. Highly recommended for serious investors.",
-            "keywords": ["excellent", "trusted", "low-risk", "established", "promising"]
-        }}
-
-        Respond with ONLY the JSON object, no additional text.
-        """
-
-        result = await llm_structured.ainvoke(
-            [
-                SystemMessage(
-                    content="You are an AI crypto analyst that grounds answers in retrieved context."
-                ),
-                HumanMessage(content=prompt),
-            ]
+        # 1) Build compact fact pack (use a SMALL model, e.g., gpt-4o-mini / similar)
+        fact_pack = await build_fact_pack(
+            llm_small=llm_structured, docs=docs, budget_tokens=2000
         )
 
-        # Extract the text content from the response
-        if hasattr(result, "content"):
-            response_text = result.content.strip()
-        else:
-            response_text = str(result).strip()
+        # 2) Run assessor (use your big model)
+        parsed = await run_assessor(
+            llm_big=llm_structured, product=product_data, fact_pack=fact_pack
+        )
 
-        # Clean the response - remove any markdown formatting
-        response_text = re.sub(r"^```json\s*", "", response_text)
-        response_text = re.sub(r"\s*```$", "", response_text)
-
-        # Parse the JSON response
-        assessment_data = json.loads(response_text)
-
-        bt.logging.info("Raw assessment data: ", assessment_data)
-        breakdown = dict(assessment_data.get("breakdown", {}))
+        # 3) Persist + score
+        breakdown = {k: v["score"] for k, v in parsed["breakdown"].items()}
         x = [float(breakdown.get(k, 0.0)) for k in METRICS]
-
-        # persist breakdown
         try:
             save_breakdown(
                 product_id=str(product_data._id),
@@ -489,15 +434,13 @@ async def generate_complete_assessment(product_data: UnreviewedProduct) -> dict:
             bt.logging.warning(
                 f"[LLM] GB inference not available ({e}); falling back to uniform mean."
             )
-            # simple fallback
-            overall = sum(x) / len(x) * 10.0  # 0..10 -> 0..100
+            overall = sum(x) / len(x) * 10.0
 
-        validated_response = {
+        return {
             "score": float(overall),
-            "review": str(assessment_data.get("review", "")),
-            "keywords": list(assessment_data.get("keywords", []))[:7],
+            "review": parsed["review"],
+            "keywords": parsed["keywords"][:7],
         }
-        return validated_response
 
     except Exception as e:
         bt.logging.error(f"Error in complete assessment generation: {e}")
