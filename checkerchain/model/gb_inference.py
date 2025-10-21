@@ -2,9 +2,9 @@ from __future__ import annotations
 import io
 from typing import Dict, Any, List
 from joblib import load
-from checkerchain.database.mongo import models_col
 
-from checkerchain.model.fe import fe_transform_one
+from checkerchain.database.mongo import models_col
+from checkerchain.model.fe import fe_transform_one_df
 
 _cached = {"model": None, "feature_order": None, "createdAt": None}
 
@@ -23,20 +23,16 @@ def predict_from_breakdown(breakdown: Dict[str, float]) -> float:
         if model is None:
             raise RuntimeError("No trained model available in cc_models.")
         _cached["model"] = model
-        _cached["feature_order"] = doc.get("feature_order")  # engineered order
+        _cached["feature_order"] = list(
+            doc.get("feature_order", [])
+        )  # engineered order
         _cached["createdAt"] = doc.get("createdAt")
 
-    # Build engineered feature vector
-    x_vec, names = fe_transform_one(breakdown)
+    # Build a 1-row DataFrame aligned to the saved feature order
+    X_df = fe_transform_one_df(breakdown, feature_order=_cached["feature_order"])
 
-    # (Optional) assert name order match
-    if _cached["feature_order"] and list(_cached["feature_order"]) != list(names):
-        # If mismatch, reorder (defensive)
-        name_to_idx = {n: i for i, n in enumerate(names)}
-        ordered = [_cached["feature_order"], name_to_idx]  # avoid flake8 warning
-        x_ordered = [x_vec[name_to_idx[n]] for n in _cached["feature_order"]]
-        yhat = float(_cached["model"].predict([x_ordered])[0])
-    else:
-        yhat = float(_cached["model"].predict([x_vec])[0])
+    # Predict with named columns to avoid sklearn's feature-name warning
+    yhat = float(_cached["model"].predict(X_df)[0])
 
+    # Clamp to 0..100
     return max(0.0, min(100.0, yhat))

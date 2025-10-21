@@ -15,12 +15,12 @@ from checkerchain.database.mongo import (
     ensure_indexes,
     METRICS,
 )
-from fe import fe_transform_matrix, fe_names
+from checkerchain.model.fe import fe_transform_df, fe_names
 
 RANDOM_STATE = 42
 N_SPLITS = 5
-N_PARAM_SAMPLES = 30  # try ~30 param sets; increase if you want more thorough search
-EARLY_STOP = 100  # early stopping rounds
+N_PARAM_SAMPLES = 30
+EARLY_STOP = 100
 
 
 def load_xy_full() -> Tuple[np.ndarray, np.ndarray]:
@@ -39,32 +39,37 @@ def remove_outliers(X: np.ndarray, y: np.ndarray, low=1, high=99):
 
 
 def sample_param() -> Dict[str, Any]:
-    # Reasonable LightGBM ranges for small tabular problems
     return {
-        "objective": "mae",  # MAE is robust for our target
-        "learning_rate": 10 ** random.uniform(-2.0, -0.9),  # 0.01 .. 0.125
+        "objective": "mae",
+        "learning_rate": 10 ** random.uniform(-2.0, -0.9),
         "n_estimators": random.randint(600, 2000),
         "num_leaves": random.randint(16, 64),
         "max_depth": random.choice([-1, 4, 5, 6, 7, 8]),
         "min_child_samples": random.randint(8, 80),
         "subsample": random.uniform(0.7, 1.0),
         "colsample_bytree": random.uniform(0.7, 1.0),
-        "reg_lambda": 10 ** random.uniform(-3, 1),  # 0.001 .. 10
+        "reg_lambda": 10 ** random.uniform(-3, 1),
         "reg_alpha": 10 ** random.uniform(-3, 1),
         "random_state": RANDOM_STATE,
         "n_jobs": -1,
+        # Silence LightGBM logs/warnings (including "No further splits...")
+        "verbosity": -1,
+        # Small safety to avoid pathological histogram shapes in tiny data
+        "force_col_wise": True,
     }
 
 
 def cv_score_params(
-    X: np.ndarray, y: np.ndarray, params: Dict[str, Any]
+    X_df: pd.DataFrame, y: np.ndarray, params: Dict[str, Any]
 ) -> Tuple[float, float]:
     """Return (cv_mae, std_mae) using KFold with early stopping."""
     kf = KFold(n_splits=N_SPLITS, shuffle=True, random_state=RANDOM_STATE)
-    maes = []
+    maes: List[float] = []
 
-    for tr_idx, va_idx in kf.split(X, y):
-        X_tr, X_va = X[tr_idx], X[va_idx]
+    # Use index-based splits while keeping DataFrame (with column names)
+    for tr_idx, va_idx in kf.split(X_df.values, y):
+        X_tr = X_df.iloc[tr_idx]
+        X_va = X_df.iloc[va_idx]
         y_tr, y_va = y[tr_idx], y[va_idx]
 
         model = lgb.LGBMRegressor(**params)
@@ -73,7 +78,10 @@ def cv_score_params(
             y_tr,
             eval_set=[(X_va, y_va)],
             eval_metric="mae",
-            callbacks=[lgb.early_stopping(stopping_rounds=EARLY_STOP, verbose=False)],
+            callbacks=[
+                lgb.early_stopping(stopping_rounds=EARLY_STOP, verbose=False),
+                lgb.log_evaluation(period=0),  # silence eval logs
+            ],
         )
         y_hat = model.predict(X_va, num_iteration=model.best_iteration_)
         maes.append(mean_absolute_error(y_va, y_hat))
@@ -88,17 +96,16 @@ def train_and_register():
         bt.logging.info(f"Not enough rows to train (have {len(y)}).")
         return
 
-    # Optional: clamp label outliers (helps stability)
     X_base, y = remove_outliers(X_base, y, low=1, high=99)
 
-    # Feature engineering (adds interactions & stats)
-    X, feat_names = fe_transform_matrix(X_base)
+    # Feature engineering as DataFrame with column names
+    X_df, feat_names = fe_transform_df(X_base)
 
     # Parameter search
     best = {"mae": 1e9, "std": 0.0, "params": None}
     for i in range(N_PARAM_SAMPLES):
         params = sample_param()
-        cv_mae, cv_std = cv_score_params(X, y, params)
+        cv_mae, cv_std = cv_score_params(X_df, y, params)
         bt.logging.info(
             f"[{i+1:02d}/{N_PARAM_SAMPLES}] MAE={cv_mae:.3f} (±{cv_std:.3f}) params={params}"
         )
@@ -110,9 +117,9 @@ def train_and_register():
     )
     bt.logging.info(best["params"])
 
-    # Final refit with small hold-out for a realistic val
+    # Final refit with hold-out
     X_tr, X_va, y_tr, y_va = train_test_split(
-        X, y, test_size=0.15, random_state=RANDOM_STATE
+        X_df, y, test_size=0.15, random_state=RANDOM_STATE
     )
     final = lgb.LGBMRegressor(**best["params"])
     final.fit(
@@ -120,7 +127,10 @@ def train_and_register():
         y_tr,
         eval_set=[(X_va, y_va)],
         eval_metric="mae",
-        callbacks=[lgb.early_stopping(stopping_rounds=EARLY_STOP, verbose=False)],
+        callbacks=[
+            lgb.early_stopping(stopping_rounds=EARLY_STOP, verbose=False),
+            lgb.log_evaluation(period=0),
+        ],
     )
     y_hat = final.predict(X_va, num_iteration=final.best_iteration_)
     val_mae = float(mean_absolute_error(y_va, y_hat))
@@ -136,8 +146,8 @@ def train_and_register():
     doc = {
         "createdAt": time.time(),
         "algo": "lightgbm.LGBMRegressor",
-        "feature_order": feat_names,  # includes engineered columns
-        "base_feature_order": METRICS,  # the original 10 (for sanity)
+        "feature_order": feat_names,  # columns used after dropping constants
+        "base_feature_order": METRICS,  # original 10 for sanity
         "metrics": {
             "cv_mae": float(best["mae"]),
             "cv_std": float(best["std"]),
