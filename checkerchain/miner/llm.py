@@ -414,7 +414,9 @@ async def generate_complete_assessment(product_data: UnreviewedProduct) -> dict:
         parsed = await run_assessor(
             llm_big=llm_structured, product=product_data, fact_pack=fact_pack
         )
-
+        
+        bt.logging.info(f"[LLM] Parsed response: ", parsed)
+ 
         # 3) Persist + score
         breakdown = {k: v["score"] for k, v in parsed["breakdown"].items()}
         x = [float(breakdown.get(k, 0.0)) for k in METRICS]
