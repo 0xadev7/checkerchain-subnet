@@ -28,7 +28,7 @@ cvxpy
 ecos
 scikit-learn
 joblib
-"tenacity>=8"
+tenacity>=8
 python-dotenv
 google-search-results
 ddgs
