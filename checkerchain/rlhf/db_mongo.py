@@ -171,3 +171,31 @@ class RLHFMongo:
             {"$set": {"ts": float(ts)}},
             upsert=True,
         )
+
+    def load_latest_weights_doc(self) -> dict | None:
+        doc = self.col_weights.find_one(sort=[("created_at", -1)])
+        return doc
+
+    def load_weights_with_meta(self) -> tuple[list[float], dict]:
+        doc = self.load_latest_weights_doc()
+        if not doc:
+            return (list(DEFAULT_W), {})
+        w = doc.get("w", DEFAULT_W)
+        if len(w) != N_METRICS or sum(w) <= 0:
+            w = list(DEFAULT_W)
+        else:
+            s = float(sum(w))
+            w = [float(v) / s for v in w]
+        meta = doc.get("meta", {}) or {}
+        return (w, meta)
+
+    def get_last_batch_fit_ts(self) -> float:
+        doc = self.col_meta.find_one({"_id": "rlhf_last_batch_fit_ts"})
+        return float(doc["ts"]) if doc and "ts" in doc else 0.0
+
+    def set_last_batch_fit_ts(self, ts: float):
+        self.col_meta.update_one(
+            {"_id": "rlhf_last_batch_fit_ts"},
+            {"$set": {"ts": float(ts)}},
+            upsert=True,
+        )

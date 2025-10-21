@@ -16,6 +16,7 @@ from checkerchain.utils.vector_store import retrieve_context, add_to_vector_stor
 from checkerchain.rlhf.constants import METRICS
 from checkerchain.rlhf.db_mongo import RLHFMongo
 from checkerchain.rlhf.score import compute_overall_from_breakdown
+from checkerchain.rlhf.constants import DEFAULT_W
 
 db = RLHFMongo()
 
@@ -489,14 +490,18 @@ async def generate_complete_assessment(product_data: UnreviewedProduct) -> dict:
 
         # compute overall deterministically from learned weights
         try:
-            w = db.load_weights()
-            meta = db.col_weights.find_one(sort=[("created_at", -1)])["meta"]
-            beta0 = float(meta.get("b0", 0.0))
-            beta1 = float(meta.get("b1", 1.0))
-            overall = compute_overall_from_breakdown(breakdown, w, beta0, beta1)
+            w_doc = db.load_latest_weights_doc()  # grab raw doc to read meta
+            if w_doc:
+                w = w_doc.get("w", DEFAULT_W)
+                meta = w_doc.get("meta", {}) or {}
+                b0 = float(meta.get("b0", 0.0))
+                b1 = float(meta.get("b1", 1.0))
+            else:
+                w, b0, b1 = DEFAULT_W, 0.0, 1.0
+
+            overall = compute_overall_from_breakdown(breakdown, w, beta0=b0, beta1=b1)
         except Exception as e:
             bt.logging.warning(f"[RLHF] compute_overall failed (using uniform): {e}")
-            from rlhf.constants import DEFAULT_W
 
             overall = compute_overall_from_breakdown(breakdown, DEFAULT_W)
 
