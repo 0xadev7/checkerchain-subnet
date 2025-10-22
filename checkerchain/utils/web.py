@@ -86,8 +86,9 @@ def fetch_web_context(product_name: str, product_url: str | None = None) -> List
     """
     queries = [
         f"{product_name} official site",
-        f"{product_name} whitepaper tokenomics",
         f"{product_name} audit report",
+        f"{product_name} whitepaper tokenomics",
+        f"{product_name} team & community",
         f"{product_name} roadmap",
     ]
     if product_url:
