@@ -379,7 +379,6 @@ async def generate_complete_assessment(product_data: UnreviewedProduct) -> dict:
         while fact_retries > 0:
             # 1) Retrieve context from vector store
             context = await retrieve_context(product_name)
-            bt.logging.info(f"[RAG] Context from vector store: {context}")
 
             # 2) Build docs for Evidence Builder
             docs = []
@@ -407,12 +406,10 @@ async def generate_complete_assessment(product_data: UnreviewedProduct) -> dict:
                 product_website,
             )
             if ds_ctx:
-                bt.logging.info(f"[RAG] Adding to vector store: {ds_ctx}")
                 add_to_vector_store(ds_ctx)
 
             web_ctx = fetch_web_context(product_name, product_website)
             if web_ctx:
-                bt.logging.info(f"[RAG] Adding to vector store: {web_ctx}")
                 add_to_vector_store(web_ctx)
 
             fact_retries -= 1
@@ -422,7 +419,7 @@ async def generate_complete_assessment(product_data: UnreviewedProduct) -> dict:
             llm_big=llm_big, product=product_data, fact_pack=fact_pack
         )
 
-        bt.logging.info(f"[LLM] Parsed response: ", parsed)
+        bt.logging.info(f"[LLM] Parsed response: {json.dumps(parsed)}")
 
         # 3) Persist + score
         breakdown = {k: v["score"] for k, v in parsed["breakdown"].items()}
