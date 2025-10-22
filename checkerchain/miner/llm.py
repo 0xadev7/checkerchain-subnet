@@ -374,6 +374,8 @@ async def generate_complete_assessment(product_data: UnreviewedProduct) -> dict:
         product_name = product_data.name
         product_website = product_data.url
 
+        # 1) Build fact
+        bt.logging.info(f"[LLM] Building facts for {product_name}")
         fact_retries = 3
         fact_pack = {}
         while fact_retries > 0:
@@ -400,8 +402,6 @@ async def generate_complete_assessment(product_data: UnreviewedProduct) -> dict:
                     {"id": f"web-{i}", "url": url, "title": url, "text": content}
                 )
 
-            bt.logging.info(f"Product docs: {json.dumps(docs)}")
-
             # 3) Build compact fact pack (use a SMALL model, e.g., gpt-4o-mini / similar)
             fact_pack = await build_fact_pack(
                 llm_small=llm_small, docs=docs, budget_tokens=2000
@@ -412,13 +412,13 @@ async def generate_complete_assessment(product_data: UnreviewedProduct) -> dict:
             fact_retries -= 1
 
         # 2) Run assessor (use your big model)
+        bt.logging.info(f"[LLM] Running assessment for {product_name}")
         parsed = await run_assessor(
             llm_big=llm_big, product=product_data, fact_pack=fact_pack
         )
 
-        bt.logging.info(f"[LLM] Parsed response: {json.dumps(parsed)}")
-
         # 3) Persist + score
+        bt.logging.info(f"[LLM] Saving breakdown")
         breakdown = {k: v["score"] for k, v in parsed["breakdown"].items()}
         x = [float(breakdown.get(k, 0.0)) for k in METRICS]
         try:
