@@ -374,13 +374,13 @@ async def generate_complete_assessment(product_data: UnreviewedProduct) -> dict:
         product_name = product_data.name
         product_website = product_data.url
 
-        # 1) Retrieve from local vector store
-        local_ctx = await retrieve_context(product_name)
+        # 1) Retrieve from vector store
+        context = await retrieve_context(product_name)
 
         # 2) Ingest datasets if empty
-        if not local_ctx.strip():
+        if not context.strip():
             bt.logging.info(
-                f"[RAG] No local context. Downloading datasets for {product_name} ..."
+                f"[RAG] No context. Downloading datasets for {product_name} ..."
             )
             ds_ctx = fetch_product_dataset(
                 product_name,
@@ -388,34 +388,24 @@ async def generate_complete_assessment(product_data: UnreviewedProduct) -> dict:
             )
             if ds_ctx:
                 add_to_vector_store(ds_ctx)
-            local_ctx = ds_ctx or ""
 
-        # 3) Web context via multi-fallback search (Tavily-free)
-        web_ctx = fetch_web_context(product_name, product_website)
-        if web_ctx:
-            add_to_vector_store(web_ctx)  # cache for future runs
+            web_ctx = fetch_web_context(product_name, product_website)
+            if web_ctx:
+                add_to_vector_store(web_ctx)
+            
+            # Retrieve context again
+            context = await retrieve_context(product_name)
 
         # 0) Build docs for Evidence Builder
         docs = []
-        if local_ctx:
-            docs.append(
-                {
-                    "id": "local-0",
-                    "url": "local://vectorstore",
-                    "title": "Local Context",
-                    "text": local_ctx,
-                }
-            )
-        if web_ctx:
-            # if you already have per-page results, loop them; else treat the whole web_ctx as one doc
-            docs.append(
-                {
-                    "id": "web-0",
-                    "url": product_website or "",
-                    "title": product_name,
-                    "text": web_ctx,
-                }
-            )
+        docs.append(
+            {
+                "id": "local",
+                "url": "local://vectorstore",
+                "title": "Local Context",
+                "text": context,
+            }
+        )
 
         # 1) Build compact fact pack (use a SMALL model, e.g., gpt-4o-mini / similar)
         fact_pack = await build_fact_pack(
