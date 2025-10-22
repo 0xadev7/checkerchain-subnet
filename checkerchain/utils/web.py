@@ -106,7 +106,8 @@ def fetch_web_context(product_name: str, product_url: str | None = None) -> List
         if len(urls) >= SCRAPE_PER_QUERY_LIMIT:
             break
 
-    bt.logging.info(f"Use these URLs for web context:\n {','.join(urls)}")
+    joined_urls = "\n".join(urls)
+    bt.logging.info(f"Use these URLs for web context:\n {joined_urls}")
 
     pages = []
     for u in urls[:SCRAPE_PER_QUERY_LIMIT]:
