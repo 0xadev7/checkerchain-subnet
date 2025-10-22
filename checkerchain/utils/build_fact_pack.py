@@ -133,18 +133,11 @@ async def build_fact_pack(
 
     priority = [
         "security",  # Core protection layer
-        "audit_verification",  # Security audit / verification depth
         "team",  # Human capital and credibility
-        "reputation",  # Historical integrity and trustworthiness
         "tokenomics",  # Economic design
-        "sustainability",  # Long-term economic and operational viability
-        "decentralization",  # Governance and node distribution
-        "governance_participation",  # DAO activity and fairness
         "partnerships",  # Network and ecosystem collaborations
-        "developer_ecosystem",  # Dev traction and support
         "utility",  # Practical functionality and value proposition
         "userbase",  # Adoption and active usage
-        "community_engagement",  # Community health and involvement
         "roadmap",  # Vision, milestones, execution
         "clarity",  # Transparency and documentation
         "marketing",  # Outreach, communication, narrative

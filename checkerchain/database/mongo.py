@@ -28,18 +28,11 @@ METRICS = [
     "userbase",
     "team",
     "security",
-    "audit_verification",
     "tokenomics",
-    "sustainability",
-    "decentralization",
-    "governance_participation",
     "marketing",
-    "community_engagement",
     "partnerships",
-    "developer_ecosystem",
     "roadmap",
     "clarity",
-    "reputation",
 ]
 
 
