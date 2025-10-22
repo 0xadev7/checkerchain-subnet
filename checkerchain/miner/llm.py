@@ -379,6 +379,7 @@ async def generate_complete_assessment(product_data: UnreviewedProduct) -> dict:
         while fact_retries > 0:
             # 1) Retrieve context from vector store
             context = await retrieve_context(product_name)
+            bt.logging.info(f"[RAG] Context from vector store: {context}")
 
             # 2) Build docs for Evidence Builder
             docs = []
