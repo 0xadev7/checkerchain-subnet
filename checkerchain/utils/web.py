@@ -80,7 +80,7 @@ def fetch_product_dataset(name: str, url: str | None = None) -> str:
     return "\n".join(ctx) if ctx else ""
 
 
-def fetch_web_context(product_name: str, product_url: str | None = None) -> str:
+def fetch_web_context(product_name: str, product_url: str | None = None) -> List:
     """
     Search the web and scrape top pages (preferring official docs).
     """
@@ -115,12 +115,12 @@ def fetch_web_context(product_name: str, product_url: str | None = None) -> str:
                 u, requests_kwargs={"timeout": REQUEST_TIMEOUT_SECS}
             ).load()
             for d in docs:
-                pages.append(f"[{u}]\n{d.page_content}")
+                pages.append((u, d.page_content))
         except Exception as e:
             bt.logging.warning(f"Error fetching pages from URL: {u}", e)
             continue
 
-    return "\n\n".join(pages)
+    return pages
 
 
 def web_search(query: str, limit: int = SEARCH_RESULT_LIMIT) -> List[str]:

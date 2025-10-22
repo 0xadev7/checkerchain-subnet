@@ -377,19 +377,28 @@ async def generate_complete_assessment(product_data: UnreviewedProduct) -> dict:
         fact_retries = 3
         fact_pack = {}
         while fact_retries > 0:
-            # 1) Retrieve context from vector store
-            context = await retrieve_context(product_name)
+            # 1) Build context data
+            product_ds = fetch_product_dataset(
+                product_name,
+                product_website,
+            )
+
+            web_pages = fetch_web_context(product_name, product_website)
 
             # 2) Build docs for Evidence Builder
             docs = []
             docs.append(
                 {
-                    "id": "local",
-                    "url": "local://vectorstore",
-                    "title": "Local Context",
-                    "text": context,
+                    "id": "product",
+                    "url": product_website or "",
+                    "title": "Product Context",
+                    "text": product_ds,
                 }
             )
+            for i, (url, content) in enumerate(web_pages):
+                docs.append(
+                    {"id": f"web-{i}", "url": url, "title": url, "text": content}
+                )
 
             # 3) Build compact fact pack (use a SMALL model, e.g., gpt-4o-mini / similar)
             fact_pack = await build_fact_pack(
@@ -397,20 +406,6 @@ async def generate_complete_assessment(product_data: UnreviewedProduct) -> dict:
             )
             if len(fact_pack.get("facts", [])) > 0:
                 break
-
-            bt.logging.info(
-                f"[RAG] No fact. Updating vector store for {product_name} ..."
-            )
-            ds_ctx = fetch_product_dataset(
-                product_name,
-                product_website,
-            )
-            if ds_ctx:
-                add_to_vector_store(ds_ctx)
-
-            web_ctx = fetch_web_context(product_name, product_website)
-            if web_ctx:
-                add_to_vector_store(web_ctx)
 
             fact_retries -= 1
 
