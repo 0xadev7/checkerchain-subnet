@@ -1,3 +1,5 @@
+import asyncio
+
 import json
 from typing import Dict, Any, List
 
@@ -25,20 +27,25 @@ async def build_fact_pack(
             sid = f"{d.get('id','unknown')}-{i}"
             mapped.append((sid, ch, d))
 
-    # NB: Parallelize in your infra; here sequential for clarity
     arrays: List[Any] = []
-    for sid, ch, d in mapped:
+
+    async def _safe_map_extract(llm_small, ch, sid):
+        """Wrapper to catch exceptions per chunk."""
         try:
-            arr = await map_extract(llm_small, ch, sid)
-            if arr is not None:
-                arrays.append(arr)
+            return await map_extract(llm_small, ch, sid)
         except Exception:
-            # swallow per-chunk failures
-            pass
+            return None  # swallow per-chunk failure
+
+    # Run all tasks concurrently
+    tasks = [_safe_map_extract(llm_small, ch, sid) for sid, ch, d in mapped]
+    results = await asyncio.gather(*tasks)
+
+    # Filter out failed/None results
+    arrays = [r for r in results if r is not None]
 
     # 3) reduce
     try:
-        merged = await reduce_facts(llm_small, arrays, max_facts=15)
+        merged = await reduce_facts(llm_small, arrays, max_facts=8)
     except Exception:
         merged = None
 
