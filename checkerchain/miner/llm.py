@@ -396,6 +396,8 @@ async def generate_complete_assessment(product_data: UnreviewedProduct) -> dict:
             # Retrieve context again
             context = await retrieve_context(product_name)
 
+        bt.logging.info(f"[RAG] Local context: {context}")
+
         # 0) Build docs for Evidence Builder
         docs = []
         docs.append(
