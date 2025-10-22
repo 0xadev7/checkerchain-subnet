@@ -406,10 +406,12 @@ async def generate_complete_assessment(product_data: UnreviewedProduct) -> dict:
                 product_website,
             )
             if ds_ctx:
+                bt.logging.info(f"[RAG] Adding to vector store: {ds_ctx}")
                 add_to_vector_store(ds_ctx)
 
             web_ctx = fetch_web_context(product_name, product_website)
             if web_ctx:
+                bt.logging.info(f"[RAG] Adding to vector store: {web_ctx}")
                 add_to_vector_store(web_ctx)
 
             fact_retries -= 1
