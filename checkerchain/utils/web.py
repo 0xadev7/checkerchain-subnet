@@ -97,9 +97,10 @@ def fetch_web_context(product_name: str, product_url: str | None = None) -> str:
     urls: List[str] = []
     for q in queries:
         for u in web_search(q, limit=SEARCH_RESULT_LIMIT):
-            if u not in seen:
-                seen.add(u)
-                urls.append(u)
+            valid_url = u.replace(",", "")
+            if valid_url not in seen:
+                seen.add(valid_url)
+                urls.append(valid_url)
             if len(urls) >= SCRAPE_PER_QUERY_LIMIT:
                 break
         if len(urls) >= SCRAPE_PER_QUERY_LIMIT:
