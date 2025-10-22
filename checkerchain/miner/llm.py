@@ -399,7 +399,7 @@ async def generate_complete_assessment(product_data: UnreviewedProduct) -> dict:
                 docs.append(
                     {"id": f"web-{i}", "url": url, "title": url, "text": content}
                 )
-            
+
             bt.logging.info(f"Product docs: {json.dumps(docs)}")
 
             # 3) Build compact fact pack (use a SMALL model, e.g., gpt-4o-mini / similar)
