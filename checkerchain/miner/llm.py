@@ -374,13 +374,32 @@ async def generate_complete_assessment(product_data: UnreviewedProduct) -> dict:
         product_name = product_data.name
         product_website = product_data.url
 
-        # 1) Retrieve from vector store
-        context = await retrieve_context(product_name)
+        fact_retries = 3
+        fact_pack = {}
+        while fact_retries > 0:
+            # 1) Retrieve context from vector store
+            context = await retrieve_context(product_name)
 
-        # 2) Ingest datasets if empty
-        if not context.strip():
+            # 2) Build docs for Evidence Builder
+            docs = []
+            docs.append(
+                {
+                    "id": "local",
+                    "url": "local://vectorstore",
+                    "title": "Local Context",
+                    "text": context,
+                }
+            )
+
+            # 3) Build compact fact pack (use a SMALL model, e.g., gpt-4o-mini / similar)
+            fact_pack = await build_fact_pack(
+                llm_small=llm_small, docs=docs, budget_tokens=2000
+            )
+            if len(fact_pack.get("facts", [])) > 0:
+                break
+
             bt.logging.info(
-                f"[RAG] No context. Downloading datasets for {product_name} ..."
+                f"[RAG] No fact. Updating vector store for {product_name} ..."
             )
             ds_ctx = fetch_product_dataset(
                 product_name,
@@ -392,27 +411,8 @@ async def generate_complete_assessment(product_data: UnreviewedProduct) -> dict:
             web_ctx = fetch_web_context(product_name, product_website)
             if web_ctx:
                 add_to_vector_store(web_ctx)
-            
-            # Retrieve context again
-            context = await retrieve_context(product_name)
 
-        bt.logging.info(f"[RAG] Local context: {context}")
-
-        # 0) Build docs for Evidence Builder
-        docs = []
-        docs.append(
-            {
-                "id": "local",
-                "url": "local://vectorstore",
-                "title": "Local Context",
-                "text": context,
-            }
-        )
-
-        # 1) Build compact fact pack (use a SMALL model, e.g., gpt-4o-mini / similar)
-        fact_pack = await build_fact_pack(
-            llm_small=llm_small, docs=docs, budget_tokens=2000
-        )
+            fact_retries -= 1
 
         # 2) Run assessor (use your big model)
         parsed = await run_assessor(
