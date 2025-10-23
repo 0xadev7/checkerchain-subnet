@@ -5,6 +5,7 @@ import re
 import urllib.parse
 import requests
 from typing import List, Tuple, Optional
+from urllib.parse import urlparse
 
 from langchain_community.document_loaders import WebBaseLoader
 from langchain_community.tools import DuckDuckGoSearchResults
@@ -39,7 +40,14 @@ def normalize_url(u: str) -> str:
     """Strip fragments and tracking params for better dedupe."""
     try:
         u = u.strip().split("#")[0]
-        parsed = urllib.parse.urlsplit(u)
+
+        parsed = urlparse(u)
+
+        # If missing scheme, assume https
+        if not parsed.scheme:
+            url = "https://" + u
+            parsed = urlparse(url)
+
         clean_qs = urllib.parse.parse_qsl(parsed.query, keep_blank_values=False)
         qs = urllib.parse.urlencode(
             [(k, v) for k, v in clean_qs if not k.startswith(("utm_", "ref"))]
