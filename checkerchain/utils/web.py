@@ -10,6 +10,10 @@ from urllib.parse import urlparse
 from langchain_community.document_loaders import WebBaseLoader
 import bittensor as bt
 
+from checkerchain.database.mongo import (
+    get_cached_urls,
+    upsert_cached_urls,
+)
 from checkerchain.utils.config import (
     REQUEST_TIMEOUT_SECS,
     SEARCH_RESULT_LIMIT,
@@ -135,12 +139,10 @@ def _build_one_shot_query(product_name: str, product_url: Optional[str]) -> str:
     base = product_name.strip()
     site_hint = ""
     if product_url:
-        site_hint = f" (official site: {product_url})"
+        site_hint = f" (site: {product_url})"
 
     # Consolidate intents into one natural-language query; Tavily handles NL well.
-    return (
-        f"{base}{site_hint}: official website, security audits whitepaper or litepaper, roadmap, and community links"
-    )
+    return f"{base}{site_hint}: official website, security audits whitepaper or litepaper, roadmap, and community links"
 
 
 def _tavily_one_shot_search(
@@ -276,18 +278,61 @@ def fetch_product_dataset(name: str, url: Optional[str] = None) -> str:
 
 
 def fetch_web_context(
-    product_name: str, product_url: Optional[str] = None
+    product_name: str,
+    product_url: Optional[str] = None,
+    *,
+    product_id: Optional[str] = None,
+    review_cycle: int = 0,
+    force_refresh: bool = False,
+    cache_hours: int = 72,  # reuse URLs for up to 72h
 ) -> List[Tuple[str, str]]:
     """
     Use a single Tavily API call to retrieve candidate links, then score + scrape
     (preferring official docs/audits/whitepaper/github/roadmap/community).
     Returns list of (url, page_text).
     """
-    # ONE Tavily call to get a broad pool
-    # We over-ask a bit here and cap downstream
-    candidate_urls = _tavily_one_shot_search(
-        product_name, product_url, k=max(SCRAPE_PER_QUERY_LIMIT * 3, 18)
-    )
+    # 1) Try cache first (only if product_id is provided)
+    cached_urls: List[str] = []
+    used_cache = False
+    if product_id and not force_refresh:
+        got = get_cached_urls(product_id, review_cycle, max_age_hours=cache_hours)
+        if got:
+            cached_urls = got
+            used_cache = True
+            bt.logging.info(
+                f"[web-cache] Using {len(cached_urls)} cached URLs for productId={product_id}, rc={review_cycle}"
+            )
+
+    # 2) If no cache, query Tavily once
+    candidate_urls: List[str]
+    if used_cache:
+        candidate_urls = cached_urls
+    else:
+        candidate_urls = _tavily_one_shot_search(
+            product_name,
+            product_url,
+            k=max(SCRAPE_PER_QUERY_LIMIT * 3, 18),
+        )
+        # Save to cache if possible
+        if product_id and candidate_urls:
+            try:
+                upsert_cached_urls(
+                    product_id=product_id,
+                    review_cycle=review_cycle,
+                    urls=candidate_urls,
+                    source="tavily",
+                    meta={
+                        "requested": max(SCRAPE_PER_QUERY_LIMIT * 3, 18),
+                        "received": len(candidate_urls),
+                        "productName": product_name,
+                        "hasProductUrl": bool(product_url),
+                    },
+                )
+                bt.logging.info(
+                    f"[web-cache] Cached {len(candidate_urls)} URLs for productId={product_id}, rc={review_cycle}"
+                )
+            except Exception as e:
+                bt.logging.warning(f"[web-cache] upsert failed: {e}")
 
     if not candidate_urls:
         bt.logging.info("No URLs found for web context.")

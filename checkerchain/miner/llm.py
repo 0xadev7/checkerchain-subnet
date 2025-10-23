@@ -370,6 +370,9 @@ async def generate_quality_keywords_with_score(
 
 async def generate_complete_assessment(product_data: UnreviewedProduct) -> dict:
     try:
+        product_id = str(product_data._id)
+        review_cycle = int(product_data.currentReviewCycle or 1)
+
         product_name = product_data.name
         product_website = product_data.url
 
@@ -384,7 +387,12 @@ async def generate_complete_assessment(product_data: UnreviewedProduct) -> dict:
                 product_website,
             )
 
-            web_pages = fetch_web_context(product_name, product_website)
+            web_pages = fetch_web_context(
+                product_name,
+                product_website,
+                product_id=product_id,
+                review_cycle=review_cycle,
+            )
 
             # 2) Build docs for Evidence Builder
             docs = []
@@ -425,8 +433,8 @@ async def generate_complete_assessment(product_data: UnreviewedProduct) -> dict:
         cx = [float(confidence.get(k, 0.0)) for k in METRICS]
         try:
             save_breakdown_and_confidence(
-                product_id=str(product_data._id),
-                review_cycle=int(product_data.currentReviewCycle or 1),
+                product_id=product_id,
+                review_cycle=review_cycle,
                 x=x,
                 cx=cx,
                 model_version="gb_v1",

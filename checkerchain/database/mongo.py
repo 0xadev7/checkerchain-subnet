@@ -1,6 +1,6 @@
 from __future__ import annotations
 import os, time
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional
 from pymongo import MongoClient, ASCENDING, DESCENDING
 from pymongo.collection import Collection
@@ -21,6 +21,7 @@ labels_col: Collection = db["cc_labels"]
 dataset_col: Collection = db["cc_datasets"]
 models_col: Collection = db["cc_models"]
 meta_col: Collection = db["cc_meta"]
+webcache_col: Collection = db["cc_webcache"]
 
 METRICS = [
     "project",
@@ -67,6 +68,22 @@ def ensure_indexes():
     )
     models_col.create_index([("createdAt", DESCENDING)])
 
+    webcache_col.create_index(
+        [("productId", ASCENDING), ("reviewCycle", ASCENDING)],
+        unique=True,
+        name="prod_cycle_unique",
+    )
+    ttl_days = int(os.getenv("WEB_URL_CACHE_TTL_DAYS", "7"))
+    try:
+        webcache_col.create_index(
+            [("createdAt", ASCENDING)],
+            expireAfterSeconds=ttl_days * 24 * 3600,
+            name="createdAt_ttl",
+        )
+    except Exception:
+        # Some Mongo versions can't modify TTL via create_index; ignore if exists.
+        pass
+
 
 def save_breakdown_and_confidence(
     product_id: str,
@@ -78,12 +95,6 @@ def save_breakdown_and_confidence(
     """
     Save or update the 10-metric breakdown for a product/review cycle.
     This is called by llm.generate_complete_assessment(...) after LLM scoring.
-
-    Args:
-        product_id: CheckerChain product ID
-        review_cycle: current review cycle integer
-        x: list of 10 floats (metrics 0–10)
-        model_version: version tag for tracking inference model
     """
     if len(x) != len(METRICS):
         raise ValueError(f"Expected {len(METRICS)} metrics, got {len(x)}")
@@ -120,3 +131,53 @@ def save_breakdown_and_confidence(
             },
             upsert=True,
         )
+
+
+def get_cached_urls(
+    product_id: str,
+    review_cycle: int,
+    max_age_hours: Optional[int] = None,
+) -> Optional[List[str]]:
+    """
+    Return cached URLs if present (and fresh enough when max_age_hours is given).
+    """
+    doc = webcache_col.find_one(
+        {"productId": product_id, "reviewCycle": int(review_cycle)},
+        {"urls": 1, "createdAt": 1},
+    )
+    if not doc or "urls" not in doc:
+        return None
+    if max_age_hours is not None and doc.get("createdAt"):
+        age = datetime.now(timezone.utc) - doc["createdAt"]
+        if age.total_seconds() > max_age_hours * 3600:
+            return None
+    return list(doc["urls"])
+
+
+def upsert_cached_urls(
+    product_id: str,
+    review_cycle: int,
+    urls: List[str],
+    source: str = "tavily",
+    meta: Optional[Dict[str, Any]] = None,
+) -> None:
+    now = datetime.now(timezone.utc)
+    webcache_col.update_one(
+        {"productId": product_id, "reviewCycle": int(review_cycle)},
+        {
+            "$set": {
+                "productId": product_id,
+                "reviewCycle": int(review_cycle),
+                "urls": list(urls),
+                "source": source,
+                "meta": meta or {},
+                "updatedAt": now,
+            },
+            "$setOnInsert": {"createdAt": now},
+        },
+        upsert=True,
+    )
+
+
+def invalidate_cached_urls(product_id: str, review_cycle: int) -> None:
+    webcache_col.delete_one({"productId": product_id, "reviewCycle": int(review_cycle)})
