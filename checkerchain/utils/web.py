@@ -8,8 +8,6 @@ from typing import List, Tuple, Optional
 from urllib.parse import urlparse
 
 from langchain_community.document_loaders import WebBaseLoader
-from langchain_community.tools import DuckDuckGoSearchResults
-
 import bittensor as bt
 
 from checkerchain.utils.config import (
@@ -40,7 +38,6 @@ def normalize_url(u: str) -> str:
     """Strip fragments and tracking params for better dedupe."""
     try:
         u = u.strip().split("#")[0]
-
         parsed = urlparse(u)
 
         # If missing scheme, assume https
@@ -126,17 +123,49 @@ def unique_by_domain_and_url(urls: List[str]) -> List[str]:
 
 
 # ---------------------------
-# Search backends (HTTP; no LangChain wrappers to avoid import churn)
+# One-shot Tavily search
 # ---------------------------
 
 
-def _search_tavily_http(query: str, k: int) -> List[str]:
+def _build_one_shot_query(product_name: str, product_url: Optional[str]) -> str:
     """
-    Tavily free-tier via REST. Set TAVILY_API_KEY in env to enable.
+    Build a single, rich query that asks Tavily for all high-signal resources in one go.
+    We hint the official site (if known) and enumerate the resource types we want.
+    """
+    base = product_name.strip()
+    site_hint = ""
+    if product_url:
+        try:
+            site = netloc(product_url)
+            if site:
+                site_hint = f" (official site: {site})"
+        except Exception:
+            pass
+
+    # Consolidate intents into one natural-language query; Tavily handles NL well.
+    return (
+        f"Find the most relevant, high-quality sources for {base}{site_hint}: "
+        f"official website, documentation (docs/gitbook), GitHub repository, "
+        f"security audits (Trail of Bits, Halborn, Quantstamp, Code4rena, Immunefi, Least Authority), "
+        f"whitepaper or litepaper (PDF), roadmap, and community links (Discord, Telegram, forum, Snapshot). "
+        f"Prioritize official domains and primary sources."
+    )
+
+
+def _tavily_one_shot_search(
+    product_name: str, product_url: Optional[str], k: int
+) -> List[str]:
+    """
+    Perform exactly ONE Tavily API call to retrieve a broad set of candidate URLs for a product.
+    Requires TAVILY_API_KEY env var.
     """
     api_key = os.getenv("TAVILY_API_KEY")
     if not api_key:
+        bt.logging.warning("TAVILY_API_KEY is not set; skipping Tavily search.")
         return []
+
+    query = _build_one_shot_query(product_name, product_url)
+
     try:
         resp = requests.post(
             "https://api.tavily.com/search",
@@ -144,8 +173,16 @@ def _search_tavily_http(query: str, k: int) -> List[str]:
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {api_key}",
             },
-            json={"query": query, "num_results": k},
-            timeout=min(REQUEST_TIMEOUT_SECS, 15),
+            json={
+                "query": query,
+                # ask for a broader set; we'll score & cap downstream
+                "num_results": max(k, SEARCH_RESULT_LIMIT),
+                # keep payload lean; we only need URLs
+                "include_images": False,
+                "include_answer": False,
+                "search_depth": "basic",
+            },
+            timeout=min(REQUEST_TIMEOUT_SECS, 20),
         )
         if not resp.ok:
             bt.logging.warning(
@@ -153,79 +190,19 @@ def _search_tavily_http(query: str, k: int) -> List[str]:
             )
             return []
         data = resp.json()
-        return [
+        urls = [
             r["url"]
             for r in data.get("results", [])
-            if isinstance(r, dict) and r.get("url")
+            if isinstance(r, dict) and r.get("url") and r["url"].startswith("http")
         ]
+        return unique_by_domain_and_url([normalize_url(u) for u in urls])[:k]
     except Exception as e:
         bt.logging.warning(f"Tavily HTTP search failed: {e}")
         return []
 
 
-def _search_searx_http(query: str, k: int) -> List[str]:
-    """
-    SearxNG public/self-hosted instance via REST.
-    Set SEARX_HOST (e.g., https://searxng.site) to enable.
-    """
-    base = os.getenv("SEARX_HOST")
-    if not base:
-        return []
-    try:
-        resp = requests.get(
-            f"{base.rstrip('/')}/search",
-            params={
-                "q": query,
-                "format": "json",
-                "language": "en",
-                "safesearch": 1,
-                "categories": "general",
-            },
-            timeout=min(REQUEST_TIMEOUT_SECS, 15),
-        )
-        if not resp.ok:
-            bt.logging.warning(
-                f"SearxNG HTTP search non-200: {resp.status_code} | {resp.text[:200]}"
-            )
-            return []
-        data = resp.json()
-        results = data.get("results", [])
-        urls = [r.get("url") or r.get("link") for r in results if isinstance(r, dict)]
-        return [u for u in urls if u and u.startswith("http")][:k]
-    except Exception as e:
-        bt.logging.warning(f"SearxNG HTTP search failed: {e}")
-        return []
-
-
-def _search_ddg_tool(query: str, k: int) -> List[str]:
-    """
-    DuckDuckGo via LangChain tool (no key).
-    """
-    try:
-        ddg = DuckDuckGoSearchResults(max_results=k)
-        raw = ddg.run(query)
-        urls = re.findall(r'https?://[^\s)"]+', raw)
-        return urls[:k]
-    except Exception as e:
-        bt.logging.warning(f"DuckDuckGo tool failed: {e}")
-        return []
-
-
-def web_search(query: str, limit: int = SEARCH_RESULT_LIMIT) -> List[str]:
-    """
-    Free/Free-tier cascade: Tavily (HTTP) -> SearxNG (HTTP) -> DuckDuckGo tool.
-    Returns normalized, lightly deduped URLs.
-    """
-    for fn in (_search_searx_http, _search_ddg_tool):
-        urls = fn(query, limit)
-        if urls:
-            urls = [normalize_url(u) for u in urls if u.startswith("http")]
-            return unique_by_domain_and_url(urls)[:limit]
-    return []
-
-
 # ---------------------------
-# Dataset enrichment (CoinGecko, Messari, DefiLlama, Wikipedia)
+# Dataset enrichment (CoinGecko, Messari, DefiLlama, Wikipedia-like sources)
 # ---------------------------
 
 
@@ -303,71 +280,29 @@ def fetch_product_dataset(name: str, url: Optional[str] = None) -> str:
 
 
 # ---------------------------
-# Web context collector
+# Web context collector (one-shot Tavily)
 # ---------------------------
-
-TARGET_QUERIES = [
-    "{k} official site",
-    "{k} docs OR documentation",
-    "{k} whitepaper OR litepaper filetype:pdf",
-    "{k} audit OR security review",
-    "{k} github",
-    "{k} roadmap",
-    "{k} community OR forum OR discord OR telegram",
-]
-
-
-def _expand_queries(product_name: str, product_url: Optional[str]) -> List[str]:
-    base = product_name.strip()
-    if product_url:
-        site_q = f"site:{product_url}"
-    else:
-        site_q = base
-
-    qs: List[str] = []
-    for tmpl in TARGET_QUERIES:
-        qs.append(tmpl.format(k=base))
-        if site_q != base:
-            qs.append(tmpl.format(k=site_q))
-
-    # de-dup preserving order
-    seen, out = set(), []
-    for q in qs:
-        if q not in seen:
-            seen.add(q)
-            out.append(q)
-    return out
 
 
 def fetch_web_context(
     product_name: str, product_url: Optional[str] = None
 ) -> List[Tuple[str, str]]:
     """
-    Search the web and scrape top pages (preferring official docs/audits/whitepaper/github/roadmap/community).
+    Use a single Tavily API call to retrieve candidate links, then score + scrape
+    (preferring official docs/audits/whitepaper/github/roadmap/community).
     Returns list of (url, page_text).
     """
-    queries = _expand_queries(product_name, product_url)
-
-    # Collect candidates across queries (stop early on enough hits)
-    candidate_urls: List[str] = []
-    seen = set()
-    per_query_limit = max(4, SEARCH_RESULT_LIMIT // 2)
-    cap = max(SCRAPE_PER_QUERY_LIMIT * 2, 12)
-
-    for q in queries:
-        hits = web_search(q, limit=per_query_limit)
-        for u in hits:
-            if u not in seen:
-                seen.add(u)
-                candidate_urls.append(u)
-        if len(candidate_urls) >= cap:
-            break
+    # ONE Tavily call to get a broad pool
+    # We over-ask a bit here and cap downstream
+    candidate_urls = _tavily_one_shot_search(
+        product_name, product_url, k=max(SCRAPE_PER_QUERY_LIMIT * 3, 18)
+    )
 
     if not candidate_urls:
         bt.logging.info("No URLs found for web context.")
         return []
 
-    # Score → sort → dedupe per domain → cap
+    # Score → sort → dedupe per domain → cap for scraping
     scored = sorted(
         candidate_urls, key=lambda u: prefer_official(product_url, u), reverse=True
     )
