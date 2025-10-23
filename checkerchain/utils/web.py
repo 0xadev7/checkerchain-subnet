@@ -84,7 +84,7 @@ def fetch_web_context(product_name: str, product_url: str | None = None) -> List
     """
     Search the web and scrape top pages (preferring official docs).
     """
-    search_k_base = product_url if product_url else product_name
+    search_k_base = product_url.replace("www.", "") if product_url else product_name
     queries = [
         f"{search_k_base} - official site",
         f"{search_k_base} - audit report",
