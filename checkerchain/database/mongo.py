@@ -136,21 +136,16 @@ def save_breakdown_and_confidence(
 def get_cached_urls(
     product_id: str,
     review_cycle: int,
-    max_age_hours: Optional[int] = None,
 ) -> Optional[List[str]]:
     """
     Return cached URLs if present (and fresh enough when max_age_hours is given).
     """
     doc = webcache_col.find_one(
         {"productId": product_id, "reviewCycle": int(review_cycle)},
-        {"urls": 1, "createdAt": 1},
+        {"urls": 1},
     )
     if not doc or "urls" not in doc:
         return None
-    if max_age_hours is not None and doc.get("createdAt"):
-        age = datetime.now(timezone.utc) - doc["createdAt"]
-        if age.total_seconds() > max_age_hours * 3600:
-            return None
     return list(doc["urls"])
 
 

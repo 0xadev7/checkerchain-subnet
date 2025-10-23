@@ -284,7 +284,6 @@ def fetch_web_context(
     product_id: Optional[str] = None,
     review_cycle: int = 0,
     force_refresh: bool = False,
-    cache_hours: int = 72,  # reuse URLs for up to 72h
 ) -> List[Tuple[str, str]]:
     """
     Use a single Tavily API call to retrieve candidate links, then score + scrape
@@ -295,7 +294,7 @@ def fetch_web_context(
     cached_urls: List[str] = []
     used_cache = False
     if product_id and not force_refresh:
-        got = get_cached_urls(product_id, review_cycle, max_age_hours=cache_hours)
+        got = get_cached_urls(product_id, review_cycle)
         if got:
             cached_urls = got
             used_cache = True
