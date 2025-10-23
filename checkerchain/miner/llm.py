@@ -11,10 +11,9 @@ from checkerchain.database.model import MinerPrediction
 import time
 
 from checkerchain.utils.assessor import run_assessor
-from checkerchain.database.mongo import METRICS, save_breakdown
-from checkerchain.model.inference import predict_from_breakdown
+from checkerchain.database.mongo import METRICS, save_breakdown_and_confidence
+from checkerchain.model.inference import predict_from_breakdown_and_confidence
 from checkerchain.utils.web import fetch_product_dataset, fetch_web_context
-from checkerchain.utils.vector_store import retrieve_context, add_to_vector_store
 from checkerchain.utils.build_fact_pack import build_fact_pack
 
 
@@ -421,19 +420,22 @@ async def generate_complete_assessment(product_data: UnreviewedProduct) -> dict:
         # 3) Persist + score
         bt.logging.info(f"[LLM] Saving breakdown")
         breakdown = {k: v["score"] for k, v in parsed["breakdown"].items()}
+        confidence = {k: v["confidence"] for k, v in parsed["breakdown"].items()}
         x = [float(breakdown.get(k, 0.0)) for k in METRICS]
+        cx = [float(confidence.get(k, 0.0)) for k in METRICS]
         try:
-            save_breakdown(
+            save_breakdown_and_confidence(
                 product_id=str(product_data._id),
                 review_cycle=int(product_data.currentReviewCycle or 1),
                 x=x,
+                cx=cx,
                 model_version="gb_v1",
             )
         except Exception as e:
             bt.logging.warning(f"[LLM] save_breakdown failed: {e}")
 
         try:
-            overall = predict_from_breakdown(breakdown)
+            overall = predict_from_breakdown_and_confidence(breakdown, confidence)
         except Exception as e:
             bt.logging.warning(
                 f"[LLM] GB inference not available ({e}); falling back to uniform mean."

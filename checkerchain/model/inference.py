@@ -20,7 +20,7 @@ def _load_latest():
     return (model, iso), doc
 
 
-def predict_from_breakdown(breakdown: Dict[str, float]) -> float:
+def predict_from_breakdown_and_confidence(breakdown: Dict[str, float], confidence: Dict[str, float]) -> float:
     if _cached["model"] is None:
         pair, doc = _load_latest()
         if pair is None:

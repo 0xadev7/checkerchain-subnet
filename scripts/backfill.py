@@ -80,22 +80,6 @@ async def assess_product(p: Dict[str, Any]):
         if not doc:
             return
 
-    X = [float(doc.get("breakdown", {}).get(k, 0.0)) for k in METRICS]
-
-    # If we already have label, materialize a training row
-    lbl = labels_col.find_one(
-        {"productId": p["id"], "reviewCycle": int(p.get("currentReviewCycle") or 1)}
-    )
-    if lbl and ("y" in lbl):
-        dataset_col.update_one(
-            {
-                "productId": p["id"],
-                "reviewCycle": int(p.get("currentReviewCycle") or 1),
-            },
-            {"$set": {"X": X, "y": float(lbl["y"]), "ts": time.time()}},
-            upsert=True,
-        )
-
 
 class SimpleProduct:
     """Lightweight adapter so you can pass to your LLM function if it expects attributes."""

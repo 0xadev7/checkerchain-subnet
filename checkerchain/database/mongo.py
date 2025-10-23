@@ -68,10 +68,11 @@ def ensure_indexes():
     models_col.create_index([("createdAt", DESCENDING)])
 
 
-def save_breakdown(
+def save_breakdown_and_confidence(
     product_id: str,
     review_cycle: int,
     x: list[float],
+    cx: list[float],
     model_version: str = "gb_v1",
 ) -> None:
     """
@@ -91,6 +92,7 @@ def save_breakdown(
         "productId": product_id,
         "reviewCycle": int(review_cycle),
         "breakdown": {k: float(v) for k, v in zip(METRICS, x)},
+        "confidence": {k: float(v) for k, v in zip(METRICS, cx)},
         "modelVersion": model_version,
         "ts": time.time(),
     }
@@ -110,7 +112,7 @@ def save_breakdown(
             {"productId": product_id, "reviewCycle": int(review_cycle)},
             {
                 "$set": {
-                    "X": x,
+                    "X": x + cx,
                     "y": float(lbl["y"]),
                     "ts": time.time(),
                     "modelVersion": model_version,
