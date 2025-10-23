@@ -231,7 +231,7 @@ def fetch_product_dataset(name: str, url: Optional[str] = None) -> str:
     if url:
         try:
             docs = WebBaseLoader(
-                url, requests_kwargs={"timeout": REQUEST_TIMEOUT_SECS}
+                normalize_url(url), requests_kwargs={"timeout": REQUEST_TIMEOUT_SECS}
             ).load()
             ctx.extend(
                 [d.page_content for d in docs if getattr(d, "page_content", None)]
