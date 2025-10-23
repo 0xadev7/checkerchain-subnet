@@ -40,7 +40,7 @@ OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 SERPER_API_KEY = os.getenv("SERPER_API_KEY")  # google serper
 SERPAPI_API_KEY = os.getenv("SERPAPI_API_KEY")  # serpapi.com
 REQUEST_TIMEOUT_SECS = 60
-SEARCH_RESULT_LIMIT = 5
+SEARCH_RESULT_LIMIT = 3
 SCRAPE_PER_QUERY_LIMIT = 5
 
 # you don't need to worry about these envs
