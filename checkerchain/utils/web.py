@@ -139,7 +139,7 @@ def _build_one_shot_query(product_name: str, product_url: Optional[str]) -> str:
     base = product_name.strip()
     site_hint = ""
     if product_url:
-        site_hint = f" (site: {product_url})"
+        site_hint = f" ({product_url})"
 
     # Consolidate intents into one natural-language query; Tavily handles NL well.
     return f"{base}{site_hint}: official website, security audits whitepaper or litepaper, roadmap, and community links"
@@ -173,7 +173,7 @@ def _tavily_one_shot_search(
                 # keep payload lean; we only need URLs
                 "include_images": False,
                 "include_answer": False,
-                "search_depth": "basic",
+                "search_depth": "advanced",
             },
             timeout=min(REQUEST_TIMEOUT_SECS, 20),
         )
