@@ -135,20 +135,11 @@ def _build_one_shot_query(product_name: str, product_url: Optional[str]) -> str:
     base = product_name.strip()
     site_hint = ""
     if product_url:
-        try:
-            site = netloc(product_url)
-            if site:
-                site_hint = f" (official site: {site})"
-        except Exception:
-            pass
+        site_hint = f" (official site: {product_url})"
 
     # Consolidate intents into one natural-language query; Tavily handles NL well.
     return (
-        f"Find the most relevant, high-quality sources for {base}{site_hint}: "
-        f"official website, documentation (docs/gitbook), GitHub repository, "
-        f"security audits (Trail of Bits, Halborn, Quantstamp, Code4rena, Immunefi, Least Authority), "
-        f"whitepaper or litepaper (PDF), roadmap, and community links (Discord, Telegram, forum, Snapshot). "
-        f"Prioritize official domains and primary sources."
+        f"{base}{site_hint}: official website, security audits whitepaper or litepaper, roadmap, and community links"
     )
 
 
