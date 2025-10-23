@@ -1,22 +1,199 @@
-import re, requests
-from typing import List
+import os, re, urllib.parse, requests, time
+from typing import List, Tuple, Dict, Optional
+from collections import defaultdict
 
 from langchain_community.document_loaders import WebBaseLoader
-from langchain_community.utilities import GoogleSerperAPIWrapper, SerpAPIWrapper
+from langchain_community.utilities import TavilySearchAPIWrapper, SearxSearchWrapper
 from langchain_community.tools import DuckDuckGoSearchResults
+from langchain_community.utilities import WikipediaAPIWrapper
 
 import bittensor as bt
 
 from checkerchain.utils.config import (
-    SERPAPI_API_KEY,
-    SERPER_API_KEY,
     REQUEST_TIMEOUT_SECS,
     SEARCH_RESULT_LIMIT,
     SCRAPE_PER_QUERY_LIMIT,
 )
 
+# ---------------------------
+# Helpers
+# ---------------------------
 
-def fetch_product_dataset(name: str, url: str | None = None) -> str:
+OFFICIAL_HINTS = (
+    "docs.",
+    "documentation",
+    "whitepaper",
+    "litepaper",
+    "audit",
+    "security",
+    "github.com",
+    "gitbook.io",
+    "roadmap",
+    "community",
+    "discord.gg",
+    "twitter.com",
+    "x.com",
+    "forum",
+    "gov",
+    "snapshot.org",
+    "medium.com",
+    "blog.",
+)
+
+AUDIT_KEYWORDS = (
+    "audit",
+    "security review",
+    "trail of bits",
+    "least authority",
+    "sherlock",
+    "code4rena",
+    "immunefi",
+    "quantstamp",
+    "halborn",
+)
+
+COMMUNITY_KEYWORDS = ("discord", "telegram", "forum", "snapshot")
+
+
+def normalize_url(u: str) -> str:
+    u = u.strip().split("#")[0]
+    # remove tracking params
+    parsed = urllib.parse.urlsplit(u)
+    clean_qs = urllib.parse.parse_qsl(parsed.query, keep_blank_values=False)
+    qs = urllib.parse.urlencode(
+        [(k, v) for k, v in clean_qs if not k.startswith(("utm_", "ref"))]
+    )
+    return urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, parsed.path, qs, ""))
+
+
+def netloc(u: str) -> str:
+    try:
+        return urllib.parse.urlsplit(u).netloc.lower()
+    except Exception:
+        return ""
+
+
+def is_pdf(u: str) -> bool:
+    return urllib.parse.urlsplit(u).path.lower().endswith(".pdf")
+
+
+def prefer_official(product_url: Optional[str], u: str) -> int:
+    """Simple score: prefer official domain, docs/whitepaper/audits/github/roadmaps."""
+    score = 0
+    nl = netloc(u)
+    if product_url and netloc(product_url).replace("www.", "") in nl.replace(
+        "www.", ""
+    ):
+        score += 50
+    # common official doc hosts
+    if "gitbook.io" in nl or "docs." in nl:
+        score += 30
+    if "github.com" in nl:
+        score += 28
+    # keywords
+    lu = u.lower()
+    for kw in AUDIT_KEYWORDS:
+        if kw in lu:
+            score += 20
+    for kw in ("whitepaper", "litepaper", "roadmap"):
+        if kw in lu:
+            score += 12
+    for kw in COMMUNITY_KEYWORDS:
+        if kw in lu:
+            score += 6
+    # deprioritize obvious noise
+    if any(bad in nl for bad in ("pinterest.", "quora.", "fb.", "facebook.")):
+        score -= 15
+    return score
+
+
+def unique_by_domain_and_url(urls: List[str]) -> List[str]:
+    seen = set()
+    seen_domain = set()
+    result = []
+    for u in urls:
+        nu = normalize_url(u)
+        if nu in seen:
+            continue
+        d = netloc(nu)
+        # allow up to 2 per domain to avoid one site dominating
+        key = (d, len([x for x in result if netloc(x) == d]) >= 2)
+        if key[1]:
+            continue
+        seen.add(nu)
+        result.append(nu)
+    return result
+
+
+# ---------------------------
+# Free/Free-tier Search
+# ---------------------------
+
+
+def _search_tavily(query: str, k: int) -> List[str]:
+    api_key = os.getenv("TAVILY_API_KEY")
+    if not api_key:
+        return []
+    try:
+        tavily = TavilySearchAPIWrapper(
+            tavily_api_key=api_key,
+            max_results=k,
+            include_answer=False,
+            include_images=False,
+        )
+        # returns list of dicts with 'url'
+        hits = tavily.results(query).get("results", [])
+        return [h["url"] for h in hits if isinstance(h, dict) and h.get("url")]
+    except Exception as e:
+        bt.logging.warning("Tavily search failed", e)
+        return []
+
+
+def _search_searx(query: str, k: int) -> List[str]:
+    host = os.getenv("SEARX_HOST")  # e.g. https://searxng.site or self-hosted
+    if not host:
+        return []
+    try:
+        searx = SearxSearchWrapper(
+            searx_host=host, k=k, engines=None
+        )  # let instance default
+        results = searx.results(query)
+        # typical structure: [{'title':..., 'link':..., 'snippet':...}, ...]
+        return [r["link"] for r in results if isinstance(r, dict) and r.get("link")]
+    except Exception as e:
+        bt.logging.warning("SearxNG search failed", e)
+        return []
+
+
+def _search_ddg(query: str, k: int) -> List[str]:
+    try:
+        ddg = DuckDuckGoSearchResults(max_results=k)
+        raw = ddg.run(query)
+        return re.findall(r'https?://[^\s)"]+', raw)[:k]
+    except Exception as e:
+        bt.logging.warning("DuckDuckGo search failed", e)
+        return []
+
+
+def web_search(query: str, limit: int = SEARCH_RESULT_LIMIT) -> List[str]:
+    """
+    Free/Free-tier cascade: Tavily -> SearxNG -> DuckDuckGo
+    """
+    for fn in (_search_tavily, _search_searx, _search_ddg):
+        urls = fn(query, limit)
+        if urls:
+            # normalize and dedupe lightly here
+            urls = [normalize_url(u) for u in urls if u.startswith("http")]
+            return unique_by_domain_and_url(urls)[:limit]
+    return []
+
+
+# ---------------------------
+# Context dataset (adds Wikipedia as a free boost)
+# ---------------------------
+
+
+def fetch_product_dataset(name: str, url: Optional[str] = None) -> str:
     ctx = []
 
     # CoinGecko
@@ -59,7 +236,11 @@ def fetch_product_dataset(name: str, url: str | None = None) -> str:
         if r.ok:
             protocols = r.json()
             m = next(
-                (p for p in protocols if name.lower() in p.get("name", "").lower()),
+                (
+                    p
+                    for p in protocols
+                    if name.lower() in (p.get("name", "") or "").lower()
+                ),
                 None,
             )
             if m and m.get("description"):
@@ -67,7 +248,16 @@ def fetch_product_dataset(name: str, url: str | None = None) -> str:
     except Exception:
         pass
 
-    # Fallback scrape of official site
+    # Wikipedia (free, often decent for quick background)
+    try:
+        wiki = WikipediaAPIWrapper(lang="en")
+        page = wiki.run(name)  # returns top summary text
+        if page and isinstance(page, str) and len(page) > 200:
+            ctx.append(f"WIKIPEDIA: {page}")
+    except Exception:
+        pass
+
+    # Fallback: official site scrape
     if not ctx and url:
         try:
             docs = WebBaseLoader(
@@ -80,101 +270,97 @@ def fetch_product_dataset(name: str, url: str | None = None) -> str:
     return "\n".join(ctx) if ctx else ""
 
 
-def fetch_web_context(product_name: str, product_url: str | None = None) -> List:
-    """
-    Search the web and scrape top pages (preferring official docs).
-    """
-    search_k_base = product_url.replace("www.", "") if product_url else product_name
-    queries = [
-        f"{search_k_base} - official site",
-        f"{search_k_base} - audit report",
-        f"{search_k_base} - whitepaper",
-        f"{search_k_base} - community",
-        f"{search_k_base} - roadmap",
-    ]
+# ---------------------------
+# Web context: targeted queries + prioritization
+# ---------------------------
 
+TARGET_QUERIES = [
+    "{k} official site",
+    "{k} docs OR documentation",
+    "{k} whitepaper OR litepaper filetype:pdf",
+    "{k} audit OR security review",
+    "{k} github",
+    "{k} roadmap",
+    "{k} community OR forum OR discord OR telegram",
+]
+
+
+def expand_queries(product_name: str, product_url: Optional[str]) -> List[str]:
+    # Use domain without www for site-restricted precision when available
+    base = product_name.strip()
+    if product_url:
+        dom = netloc(product_url).replace("www.", "")
+        site_q = f"site:{dom}"
+    else:
+        site_q = base
+    qs = []
+    for tmpl in TARGET_QUERIES:
+        qs.append(tmpl.format(k=site_q))
+        if site_q != base:
+            qs.append(tmpl.format(k=base))
+    # de-dup while keeping order
     seen = set()
-    urls: List[str] = []
+    uniq = []
+    for q in qs:
+        if q not in seen:
+            seen.add(q)
+            uniq.append(q)
+    return uniq
+
+
+def fetch_web_context(
+    product_name: str, product_url: Optional[str] = None
+) -> List[Tuple[str, str]]:
+    """
+    Search the web and scrape top pages (preferring official docs/audits/whitepaper/github/roadmap/community).
+    Returns list of (url, page_text).
+    """
+    queries = expand_queries(product_name, product_url)
+
+    # Collect and score URLs
+    candidate_urls: List[str] = []
+    seen = set()
     for q in queries:
-        for u in web_search(q, limit=SEARCH_RESULT_LIMIT):
-            valid_url = u.replace(",", "")
-            if valid_url not in seen:
-                seen.add(valid_url)
-                urls.append(valid_url)
-            if len(urls) >= SCRAPE_PER_QUERY_LIMIT:
-                break
-        if len(urls) >= SCRAPE_PER_QUERY_LIMIT:
+        hits = web_search(q, limit=max(4, SEARCH_RESULT_LIMIT // 2))
+        for u in hits:
+            if u not in seen:
+                seen.add(u)
+                candidate_urls.append(u)
+        if len(candidate_urls) >= max(SCRAPE_PER_QUERY_LIMIT * 2, 12):
             break
 
-    joined_urls = "\n".join(urls)
-    bt.logging.info(f"Use these URLs for web context:\n {joined_urls}")
+    if not candidate_urls:
+        bt.logging.info("No URLs found for web context.")
+        return []
 
-    pages = []
-    for u in urls[:SCRAPE_PER_QUERY_LIMIT]:
+    # Score and sort
+    scored = sorted(
+        candidate_urls,
+        key=lambda u: prefer_official(product_url, u),
+        reverse=True,
+    )
+
+    # Deduplicate by domain and finalize
+    final_urls = unique_by_domain_and_url(scored)[:SCRAPE_PER_QUERY_LIMIT]
+
+    bt.logging.info("Use these URLs for web context:\n" + "\n".join(final_urls))
+
+    # Scrape
+    pages: List[Tuple[str, str]] = []
+    for u in final_urls:
+        if is_pdf(u):
+            # Optional: integrate UnstructuredURLLoader if you want PDF parsing.
+            bt.logging.info(f"Skipping PDF for now (no PDF loader wired): {u}")
+            continue
         try:
             docs = WebBaseLoader(
                 u, requests_kwargs={"timeout": REQUEST_TIMEOUT_SECS}
             ).load()
             for d in docs:
-                pages.append((u, d.page_content))
+                if d and getattr(d, "page_content", None):
+                    pages.append((u, d.page_content))
         except Exception as e:
-            bt.logging.warning(f"Error fetching pages from URL: {u}", e)
+            bt.logging.warning(f"Error fetching pages from URL: {u} | {e}")
             continue
 
     return pages
-
-
-def web_search(query: str, limit: int = SEARCH_RESULT_LIMIT) -> List[str]:
-    """
-    Returns a list of result URLs using best-available provider:
-    Serper -> SerpAPI -> Bing -> Brave (custom) -> DuckDuckGo.
-    """
-    # 1) Serper (Google Serper)
-    if SERPER_API_KEY:
-        try:
-            serper = GoogleSerperAPIWrapper(serper_api_key=SERPER_API_KEY, k=limit)
-            results = serper.results(query)
-            urls = [i.get("link") for i in results.get("organic", []) if i.get("link")]
-            if urls:
-                return urls[:limit]
-        except Exception as e:
-            bt.logging.warning("Error with Google Serper API", e)
-            pass
-
-    # 2) SerpAPI
-    if SERPAPI_API_KEY:
-        try:
-            serp = SerpAPIWrapper(serpapi_api_key=SERPAPI_API_KEY)
-            results = serp.results(query)
-            # results structure may vary; handle both dict/list
-            urls = []
-            if isinstance(results, dict) and "organic_results" in results:
-                urls = [
-                    r.get("link") for r in results["organic_results"] if r.get("link")
-                ]
-            elif isinstance(results, list):
-                urls = [
-                    str(r.get("link") or r.get("url"))
-                    for r in results
-                    if isinstance(r, dict)
-                ]
-            if urls:
-                return urls[:limit]
-        except Exception as e:
-            bt.logging.warning("Error with Serp API", e)
-            pass
-
-    # 3) DuckDuckGo (no API key)
-    try:
-        ddg_tool = DuckDuckGoSearchResults(max_results=limit)
-        # returns a JSON-ish string; parse links heuristically
-        raw = ddg_tool.run(query)
-        # very light URL extraction
-        urls = re.findall(r'https?://[^\s)"]+', raw)
-        if urls:
-            return urls[:limit]
-    except Exception as e:
-        bt.logging.warning("Error with DuckDuckGo API", e)
-        pass
-
-    return []
