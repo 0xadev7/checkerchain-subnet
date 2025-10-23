@@ -84,15 +84,12 @@ def fetch_web_context(product_name: str, product_url: str | None = None) -> List
     """
     Search the web and scrape top pages (preferring official docs).
     """
+
+    product_keyword = product_url if len(product_url or "") > 0 else product_name
+
     queries = [
-        f"{product_name} - official site",
-        f"{product_name} - audit report",
-        f"{product_name} - whitepaper tokenomics",
-        f"{product_name} - team & community",
-        f"{product_name} - roadmap",
+        f"{product_keyword} - official site, audit report, whitepaper, team, community, roadmap, scam report"
     ]
-    if product_url:
-        queries.insert(0, f"site:{product_url}")
 
     seen = set()
     urls: List[str] = []
