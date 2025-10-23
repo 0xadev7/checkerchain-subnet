@@ -85,14 +85,14 @@ def fetch_web_context(product_name: str, product_url: str | None = None) -> List
     Search the web and scrape top pages (preferring official docs).
     """
     queries = [
-        f"{product_url}({product_name}) - official site",
-        f"{product_url}({product_name}) - audit report",
-        f"{product_url}({product_name}) - whitepaper tokenomics",
-        f"{product_url}({product_name}) - team & community",
-        f"{product_url}({product_name}) - roadmap",
+        f"{product_name} - official site",
+        f"{product_name} - audit report",
+        f"{product_name} - whitepaper tokenomics",
+        f"{product_name} - team & community",
+        f"{product_name} - roadmap",
     ]
     if product_url:
-        queries.insert(0, f"site:{product_url} {product_name}")
+        queries.insert(0, f"site:{product_url}")
 
     seen = set()
     urls: List[str] = []
