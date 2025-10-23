@@ -227,6 +227,18 @@ def fetch_product_dataset(name: str, url: Optional[str] = None) -> str:
     """
     ctx: List[str] = []
 
+    # Scrape Product URL
+    if url:
+        try:
+            docs = WebBaseLoader(
+                url, requests_kwargs={"timeout": REQUEST_TIMEOUT_SECS}
+            ).load()
+            ctx.extend(
+                [d.page_content for d in docs if getattr(d, "page_content", None)]
+            )
+        except Exception as e:
+            bt.logging.warning(f"Product URL scrape failed for {url}: {e}")
+
     # CoinGecko
     try:
         r = requests.get(
@@ -278,18 +290,6 @@ def fetch_product_dataset(name: str, url: Optional[str] = None) -> str:
                 ctx.append(f"DEFI LLAMA: {m['description']}")
     except Exception:
         pass
-
-    # Fallback: official site scrape if nothing else found
-    if not ctx and url:
-        try:
-            docs = WebBaseLoader(
-                url, requests_kwargs={"timeout": REQUEST_TIMEOUT_SECS}
-            ).load()
-            ctx.extend(
-                [d.page_content for d in docs if getattr(d, "page_content", None)]
-            )
-        except Exception as e:
-            bt.logging.warning(f"Fallback scrape failed for {url}: {e}")
 
     return "\n".join(ctx) if ctx else ""
 
