@@ -356,7 +356,11 @@ def fetch_web_context(
     cap = max(SCRAPE_PER_QUERY_LIMIT * 2, 12)
 
     for q in queries:
+        print(">>>>>")
+        print(q)
         hits = web_search(q, limit=per_query_limit)
+        print(hits)
+        print("<<<<")
         for u in hits:
             if u not in seen:
                 seen.add(u)
