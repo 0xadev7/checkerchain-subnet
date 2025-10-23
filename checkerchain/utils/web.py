@@ -427,7 +427,7 @@ def fetch_web_context(
         candidate_urls = cached_urls
         provider_chain = ["cache"]
     else:
-        k = max(SCRAPE_PER_QUERY_LIMIT * 2, 10)
+        k = SCRAPE_PER_QUERY_LIMIT
         urls_tavily = _tavily_one_shot_search(product_name, product_url, k=k)
         urls_brave = (
             _brave_search(product_name, product_url, k=k)
