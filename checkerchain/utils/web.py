@@ -3,9 +3,11 @@ from typing import List, Tuple, Dict, Optional
 from collections import defaultdict
 
 from langchain_community.document_loaders import WebBaseLoader
-from langchain_community.utilities import TavilySearchAPIWrapper, SearxSearchWrapper
+from langchain_community.tools.tavily_search import TavilySearchAPIWrapper
+from langchain_community.tools.searx_search import SearxSearchWrapper
+from langchain_community.tools.wikipedia import WikipediaAPIWrapper
 from langchain_community.tools import DuckDuckGoSearchResults
-from langchain_community.utilities import WikipediaAPIWrapper
+
 
 import bittensor as bt
 
