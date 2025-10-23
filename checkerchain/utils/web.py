@@ -320,16 +320,15 @@ TARGET_QUERIES = [
 def _expand_queries(product_name: str, product_url: Optional[str]) -> List[str]:
     base = product_name.strip()
     if product_url:
-        dom = netloc(product_url).replace("www.", "")
-        site_q = f"site:{dom}"
+        site_q = f"site:{product_url}"
     else:
         site_q = base
 
     qs: List[str] = []
     for tmpl in TARGET_QUERIES:
-        qs.append(tmpl.format(k=site_q))
+        qs.append(tmpl.format(k=base))
         if site_q != base:
-            qs.append(tmpl.format(k=base))
+            qs.append(tmpl.format(k=site_q))
 
     # de-dup preserving order
     seen, out = set(), []
