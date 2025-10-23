@@ -322,13 +322,11 @@ def _expand_queries(product_name: str, product_url: Optional[str]) -> List[str]:
     if product_url:
         site_q = f"site:{product_url}"
     else:
-        site_q = base
+        site_q = ""
 
     qs: List[str] = []
     for tmpl in TARGET_QUERIES:
-        qs.append(tmpl.format(k=base))
-        if site_q != base:
-            qs.append(tmpl.format(k=site_q))
+        qs.append(tmpl.format(k=f"{base} ({site_q})"))
 
     # de-dup preserving order
     seen, out = set(), []
@@ -355,11 +353,7 @@ def fetch_web_context(
     cap = max(SCRAPE_PER_QUERY_LIMIT * 2, 12)
 
     for q in queries:
-        print(">>>>>")
-        print(q)
         hits = web_search(q, limit=per_query_limit)
-        print(hits)
-        print("<<<<")
         for u in hits:
             if u not in seen:
                 seen.add(u)
