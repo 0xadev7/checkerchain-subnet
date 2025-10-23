@@ -414,8 +414,9 @@ async def generate_complete_assessment(product_data: UnreviewedProduct) -> dict:
         # 2) Run assessor (use your big model)
         bt.logging.info(f"[LLM] Running assessment for {product_name}")
         parsed = await run_assessor(
-            llm_big=llm_small, product=product_data, fact_pack=fact_pack
+            llm_big=llm_big, product=product_data, fact_pack=fact_pack
         )
+        bt.logging.info(f"[LLM] Assessment result: {json.dumps(parsed)}")
 
         # 3) Persist + score
         bt.logging.info(f"[LLM] Saving breakdown")

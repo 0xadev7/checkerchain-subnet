@@ -184,6 +184,7 @@ async def _ainvoke_json(
     llm, system: str, user: str, retries: int = 2
 ) -> Dict[str, Any]:
     last_err = None
+    bt.logging.info(f"LLM Message:\n System: {system}\n User: {user}\n")
     for attempt in range(retries + 1):
         try:
             res = await llm.ainvoke(
