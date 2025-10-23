@@ -216,7 +216,7 @@ def web_search(query: str, limit: int = SEARCH_RESULT_LIMIT) -> List[str]:
     Free/Free-tier cascade: Tavily (HTTP) -> SearxNG (HTTP) -> DuckDuckGo tool.
     Returns normalized, lightly deduped URLs.
     """
-    for fn in (_search_tavily_http, _search_searx_http, _search_ddg_tool):
+    for fn in (_search_searx_http, _search_ddg_tool):
         urls = fn(query, limit)
         if urls:
             urls = [normalize_url(u) for u in urls if u.startswith("http")]
