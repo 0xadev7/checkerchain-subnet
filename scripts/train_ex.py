@@ -1,8 +1,9 @@
+from __future__ import annotations
+
 import numpy as np
 import pandas as pd
 import io, time, random
 
-from __future__ import annotations
 import warnings, json
 from typing import List, Tuple, Dict, Any, Callable
 
