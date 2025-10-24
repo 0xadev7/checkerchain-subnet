@@ -41,7 +41,7 @@ def train_and_register():
         X_train,
         y_train,
         eval_set=[(X_val, y_val)],
-        early_stopping_rounds=100,
+        # early_stopping_rounds=100,
         verbose=False,
     )
 
