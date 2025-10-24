@@ -42,7 +42,7 @@ def train_and_register():
         y_train,
         eval_set=[(X_val, y_val)],
         # early_stopping_rounds=100,
-        verbose=False,
+        # verbose=False,
     )
 
     preds = model.predict(X_val)
