@@ -140,11 +140,9 @@ def prune_residual_outliers(X_df: pd.DataFrame, y: np.ndarray, pct: float = 2.0)
 # ---------------------------
 # Optuna tuner (optional)
 # ---------------------------
-def _maybe_optuna_params(X: np.ndarray, y: np.ndarray, trials: int) -> Dict[str, Any]:
-    """
-    If trials>0 and optuna is available, run an Optuna study to minimize CV MAE.
-    Returns best params; otherwise returns a decent default config.
-    """
+def _maybe_optuna_params(
+    X_df: pd.DataFrame, y: np.ndarray, trials: int
+) -> Dict[str, Any]:
     default = {
         "objective": "regression",
         "metric": "mae",
@@ -197,16 +195,18 @@ def _maybe_optuna_params(X: np.ndarray, y: np.ndarray, trials: int) -> Dict[str,
         }
         kf = KFold(n_splits=5, shuffle=True, random_state=RANDOM_STATE)
         maes = []
-        for tr, va in kf.split(X):
+        for tr, va in kf.split(X_df):
+            Xtr, Xva = X_df.iloc[tr], X_df.iloc[va]
+            ytr, yva = y[tr], y[va]
             model = lgb.LGBMRegressor(**params)
             model.fit(
-                X[tr],
-                y[tr],
-                eval_set=[(X[va], y[va])],
+                Xtr,
+                ytr,
+                eval_set=[(Xva, yva)],
                 callbacks=[lgb.early_stopping(stopping_rounds=300, verbose=False)],
             )
-            preds = model.predict(X[va])
-            maes.append(mean_absolute_error(y[va], preds))
+            preds = model.predict(Xva)
+            maes.append(mean_absolute_error(yva, preds))
         return float(np.mean(maes))
 
     study = optuna.create_study(direction="minimize")
@@ -250,7 +250,7 @@ def train_and_register(trials: int = 0):
     # --- Tuning path selection ---
     if trials > 0:
         # Use Optuna to get best params
-        best_params = _maybe_optuna_params(X_df.values, y, trials)
+        best_params = _maybe_optuna_params(X_df, y, trials)
         cv_mae, cv_std, oof = cv_with_oof_and_params(X_df, y, best_params)
         bt.logging.info(
             f"[optuna] CV MAE={cv_mae:.3f} (±{cv_std:.3f}) with tuned params."

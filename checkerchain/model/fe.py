@@ -42,48 +42,54 @@ def build_features_from_raw_X(raw_X: pd.DataFrame) -> Tuple[pd.DataFrame, List[s
     df[core_cols] = df[core_cols].clip(lower=-5, upper=15)
     df[conf_cols] = df[conf_cols].clip(lower=0, upper=1)
 
-    feats = pd.DataFrame(index=df.index)
+    # Pull matrices for vectorized ops
+    core_mat = df[core_cols].to_numpy(dtype=float)
+    conf_mat = df[conf_cols].to_numpy(dtype=float)
+
+    feat: Dict[str, np.ndarray] = {}
 
     # Per-dimension transforms
     for i in range(10):
         ccol = f"X[{i}]"
         fcol = f"X[{10+i}]"
-        core, conf = df[ccol], df[fcol]
-        conf2, core2 = conf**2, core**2
+        core = core_mat[:, i]
+        conf = conf_mat[:, i]
+        conf2 = conf * conf
+        core2 = core * core
 
-        feats[f"{ccol}_core"] = core
-        feats[f"{fcol}_conf"] = conf
-        feats[f"{ccol}_w1"] = core * conf
-        feats[f"{ccol}_w2"] = core * conf2
-        feats[f"{ccol}_quad_w"] = core2 * conf
-        feats[f"{ccol}_over_conf"] = core / (conf + EPS)
-        feats[f"{ccol}_minus_10conf"] = core - 10.0 * conf
+        feat[f"{ccol}_core"] = core
+        feat[f"{fcol}_conf"] = conf
+        feat[f"{ccol}_w1"] = core * conf
+        feat[f"{ccol}_w2"] = core * conf2
+        feat[f"{ccol}_quad_w"] = core2 * conf
+        feat[f"{ccol}_over_conf"] = core / (conf + EPS)
+        feat[f"{ccol}_minus_10conf"] = core - 10.0 * conf
 
     # Global aggregates
-    core = df[core_cols]
-    conf = df[conf_cols]
-    feats["core_mean"] = core.mean(axis=1)
-    feats["core_std"] = core.std(axis=1)
-    feats["core_range"] = core.max(axis=1) - core.min(axis=1)
-    feats["core_sum"] = core.sum(axis=1)
-    feats["conf_mean"] = conf.mean(axis=1)
-    feats["conf_std"] = conf.std(axis=1)
-    feats["conf_sum"] = conf.sum(axis=1)
-    weighted_core = core.values * conf.values
-    feats["wcore_mean"] = weighted_core.mean(axis=1)
-    feats["wcore_std"] = pd.DataFrame(weighted_core, index=df.index).std(axis=1)
+    feat["core_mean"] = core_mat.mean(axis=1)
+    feat["core_std"] = core_mat.std(axis=1)
+    feat["core_range"] = core_mat.max(axis=1) - core_mat.min(axis=1)
+    feat["core_sum"] = core_mat.sum(axis=1)
+    feat["conf_mean"] = conf_mat.mean(axis=1)
+    feat["conf_std"] = conf_mat.std(axis=1)
+    feat["conf_sum"] = conf_mat.sum(axis=1)
+    wcore = core_mat * conf_mat
+    feat["wcore_mean"] = wcore.mean(axis=1)
+    feat["wcore_std"] = wcore.std(axis=1)
 
     # Pairwise weighted interactions
     for i in range(10):
         for j in range(i + 1, 10):
-            feats[f"int_w_{i}_{j}"] = (
-                df[f"X[{i}]"] * df[f"X[{j}]"] * df[f"X[{10+i}]"] * df[f"X[{10+j}]"]
+            feat[f"int_w_{i}_{j}"] = (
+                core_mat[:, i] * core_mat[:, j] * conf_mat[:, i] * conf_mat[:, j]
             )
 
     # Mild nonlinearity
     for i in range(5):
-        feats[f"core2_conf2_{i}"] = (df[f"X[{i}]"] ** 2) * (df[f"X[{10+i}]"] ** 2)
+        feat[f"core2_conf2_{i}"] = (core_mat[:, i] ** 2) * (conf_mat[:, i] ** 2)
 
+    # One-shot DataFrame creation avoids fragmentation
+    feats = pd.DataFrame(feat, index=df.index, dtype=float)
     return feats, list(feats.columns)
 
 
