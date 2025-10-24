@@ -48,7 +48,7 @@ Rules:
 - breakdown must contain ALL metrics: ["project","userbase","utility","security","team","tokenomics","marketing","roadmap","clarity","partnerships"].
 - Each metric item schema:
   {"score": 0..10, "rationale": str, "citations": [1..5 strings], "confidence": 0..1}
-- overall_score is a 0..100 weighted average for all of the metrics.
+- overall_score is a 0..100 weighted sum for all of the metrics.
 - review must be <= 140 characters (a single tight sentence).
 - keywords must have 3..7 concise strings.
 
