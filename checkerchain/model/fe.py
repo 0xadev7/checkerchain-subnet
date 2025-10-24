@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import Dict, List, Tuple, Optional
 import numpy as np
 import pandas as pd
+import re
 
 # If you still keep METRICS for downstream mapping, import it;
 # it's used only for inference mapping (breakdown/confidence -> raw X)
@@ -27,7 +28,7 @@ def build_features_from_raw_X(raw_X: pd.DataFrame) -> Tuple[pd.DataFrame, List[s
     Expects raw_X to have columns: X[0]..X[19]
       - X[0..9]   = core (scores)
       - X[10..19] = confidence (0..1)
-    Returns (engineered_features_df, feature_names)
+    Returns (engineered_features_df, feature_names) with sanitized column names.
     """
     expected_cols = [f"X[{i}]" for i in range(20)]
     missing = [c for c in expected_cols if c not in raw_X.columns]
@@ -42,7 +43,7 @@ def build_features_from_raw_X(raw_X: pd.DataFrame) -> Tuple[pd.DataFrame, List[s
     df[core_cols] = df[core_cols].clip(lower=-5, upper=15)
     df[conf_cols] = df[conf_cols].clip(lower=0, upper=1)
 
-    # Pull matrices for vectorized ops
+    # Matrices for vectorized ops
     core_mat = df[core_cols].to_numpy(dtype=float)
     conf_mat = df[conf_cols].to_numpy(dtype=float)
 
@@ -88,23 +89,41 @@ def build_features_from_raw_X(raw_X: pd.DataFrame) -> Tuple[pd.DataFrame, List[s
     for i in range(5):
         feat[f"core2_conf2_{i}"] = (core_mat[:, i] ** 2) * (conf_mat[:, i] ** 2)
 
-    # One-shot DataFrame creation avoids fragmentation
-    feats = pd.DataFrame(feat, index=df.index, dtype=float)
-    return feats, list(feats.columns)
+    # ---- sanitize names once, then build DataFrame in one shot ----
+    orig_cols = list(feat.keys())
+
+    def _sanitize(name: str) -> str:
+        s = re.sub(r"[^0-9A-Za-z_]+", "_", name)  # replace [, ], etc
+        s = re.sub(r"__+", "_", s).strip("_")  # collapse underscores
+        return s
+
+    new_cols: List[str] = []
+    seen = {}
+    for c in orig_cols:
+        sc = _sanitize(c)
+        if sc in seen:
+            seen[sc] += 1
+            sc = f"{sc}__{seen[sc]}"
+        else:
+            seen[sc] = 0
+        new_cols.append(sc)
+
+    feats = pd.DataFrame(
+        {nc: feat[oc] for oc, nc in zip(orig_cols, new_cols)},
+        index=df.index,
+        dtype=float,
+    )
+    return feats, new_cols
 
 
 # ----------------------------
 # Public FE API used by train/inference
 # ----------------------------
 def fe_transform_df_from_raw(X_base: np.ndarray) -> Tuple[pd.DataFrame, List[str]]:
-    """
-    X_base: ndarray of shape (n, 20) matching the raw layout described above.
-    """
     if X_base.ndim != 2 or X_base.shape[1] != 20:
         raise ValueError(f"Expected X_base shape (n, 20); got {X_base.shape}")
     raw = pd.DataFrame(X_base, columns=[f"X[{i}]" for i in range(20)])
     feats, feat_names = build_features_from_raw_X(raw)
-    # keep only finite rows (should already be)
     mask = np.isfinite(feats.values).all(axis=1)
     feats = feats.loc[mask].astype(float)
     return feats, feat_names
@@ -115,22 +134,15 @@ def fe_transform_one_df_from_breakdown(
     confidence: Dict[str, float],
     feature_order: Optional[List[str]] = None,
 ) -> pd.DataFrame:
-    """
-    Convert metric dicts into raw X[0..19], engineer features, and align to feature_order.
-    - breakdown: {metric -> score}
-    - confidence: {metric -> confidence in [0,1]}
-    """
-    # Map METRICS → positions X[0..9] and X[10..19]
     core_vals = [float(breakdown.get(m, 0.0)) for m in METRICS[:10]]
-    conf_vals = [
-        float(confidence.get(m, 0.5)) for m in METRICS[:10]
-    ]  # sensible default
+    conf_vals = [float(confidence.get(m, 0.5)) for m in METRICS[:10]]
     raw = np.array([core_vals + conf_vals], dtype=float)
 
     raw_df = pd.DataFrame(raw, columns=[f"X[{i}]" for i in range(20)])
-    feats, feat_names = build_features_from_raw_X(raw_df)
+    feats, feat_names = build_features_from_raw_X(raw_df)  # already sanitized
 
     if feature_order:
+        # Create any missing columns (robust to future FE changes)
         for col in feature_order:
             if col not in feats.columns:
                 feats[col] = 0.0
