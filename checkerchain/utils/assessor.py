@@ -45,10 +45,10 @@ Rules:
   - lower confidence (e.g., 0.3–0.6),
   - avoid inventing specific, unverifiable claims.
 - Prefer recent, reputable sources. If sources conflict, note briefly in rationale and prefer more credible/recent.
-- breakdown must contain ALL metrics: ["project","userbase","utility","security","team","tokenomics","marketing","roadmap","clarity","partnerships"].
+- breakdown must contain ALL metrics: ["project", "utility", "userbase", "team", "security", "tokenomics", "marketing", "partnerships", "roadmap", "clarity"].
 - Each metric item schema:
   {"score": 0..10, "rationale": str, "citations": [1..5 strings], "confidence": 0..1}
-- overall_score is a 0..100 weighted sum for all of the metrics.
+- overall_score (0..100) is weighted average based on breakdown scores.
 - review must be <= 140 characters (a single tight sentence).
 - keywords must have 3..7 concise strings.
 
