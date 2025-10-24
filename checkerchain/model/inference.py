@@ -4,7 +4,7 @@ from typing import Dict
 from joblib import load
 
 from checkerchain.database.mongo import models_col
-from checkerchain.model.fe import fe_transform_one_df
+from checkerchain.model.fe import fe_transform_one_df_from_breakdown
 
 _cached = {"model": None, "iso": None, "feature_order": None, "createdAt": None}
 
@@ -20,7 +20,13 @@ def _load_latest():
     return (model, iso), doc
 
 
-def predict_from_breakdown_and_confidence(breakdown: Dict[str, float], confidence: Dict[str, float]) -> float:
+def predict_from_breakdown_and_confidence(
+    breakdown: Dict[str, float], confidence: Dict[str, float]
+) -> float:
+    """
+    Takes per-metric breakdown (scores) and confidences (0..1),
+    builds raw X[0..19], engineers features to the saved order, and predicts.
+    """
     if _cached["model"] is None:
         pair, doc = _load_latest()
         if pair is None:
@@ -29,7 +35,9 @@ def predict_from_breakdown_and_confidence(breakdown: Dict[str, float], confidenc
         _cached["feature_order"] = list(doc.get("feature_order", []))
         _cached["createdAt"] = doc.get("createdAt")
 
-    X_df = fe_transform_one_df(breakdown, feature_order=_cached["feature_order"])
+    X_df = fe_transform_one_df_from_breakdown(
+        breakdown, confidence, feature_order=_cached["feature_order"]
+    )
     raw = float(_cached["model"].predict(X_df)[0])
     if _cached["iso"] is not None:
         raw = float(_cached["iso"].predict([raw])[0])
