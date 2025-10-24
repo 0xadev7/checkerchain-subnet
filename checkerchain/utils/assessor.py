@@ -71,7 +71,7 @@ Sources (id→url):
 {json.dumps(fact_pack.get("sources", []), ensure_ascii=False)}
 
 Required metrics: {", ".join(METRICS)}.
-Compute overall_score as a weighted average you deem reasonable.
+Compute overall_score as a weighted sum of breakdown scores you deem reasonable.
 Keep review <= 140 chars and keywords 3–7 items.
 Return one JSON object with keys: breakdown, overall_score, review, keywords.
 """
