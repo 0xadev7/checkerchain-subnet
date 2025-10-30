@@ -34,3 +34,5 @@ google-search-results
 ddgs
 lightgbm
 pandas
+json-repair
+langgraph

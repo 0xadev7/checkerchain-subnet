@@ -11,10 +11,6 @@ from checkerchain.database.model import MinerPrediction
 import time
 
 from checkerchain.utils.assessor import run_assessor
-from checkerchain.database.mongo import METRICS, save_breakdown_and_confidence
-from checkerchain.model.inference import predict_from_breakdown_and_confidence
-from checkerchain.utils.web import fetch_product_dataset, fetch_web_context
-from checkerchain.utils.build_fact_pack import build_fact_pack
 
 
 class ScoreBreakdown(BaseModel):
@@ -78,10 +74,11 @@ llm_small = ChatOpenAI(
 )
 
 llm_big = ChatOpenAI(
-    model="gpt-4o",
-    temperature=0.7,
-    max_tokens=1000,
+    model="gpt-4o-mini",
+    temperature=0.3,
+    max_tokens=2000,
     api_key=OPENROUTER_API_KEY,
+    reasoning={"effort": "high", "summary": "auto"},
     base_url="https://openrouter.ai/api/v1",
     default_headers={
         "HTTP-Referer": "https://checkerchain.com/",
@@ -370,88 +367,15 @@ async def generate_quality_keywords_with_score(
 
 async def generate_complete_assessment(product_data: UnreviewedProduct) -> dict:
     try:
-        product_id = str(product_data._id)
-        review_cycle = int(product_data.currentReviewCycle or 1)
-
         product_name = product_data.name
-        product_website = product_data.url
 
-        # 1) Build fact
-        bt.logging.info(f"[LLM] Building facts for {product_name}")
-        fact_retries = 3
-        fact_pack = {}
-        while fact_retries > 0:
-            # 1) Build context data
-            product_ds = fetch_product_dataset(
-                product_name,
-                product_website,
-            )
-
-            web_pages = fetch_web_context(
-                product_name,
-                product_website,
-                product_id=product_id,
-                review_cycle=review_cycle,
-            )
-
-            # 2) Build docs for Evidence Builder
-            docs = []
-            docs.append(
-                {
-                    "id": "product",
-                    "url": product_website or "",
-                    "title": "Product Context",
-                    "text": product_ds,
-                }
-            )
-            for i, (url, content) in enumerate(web_pages):
-                docs.append(
-                    {"id": f"web-{i}", "url": url, "title": url, "text": content}
-                )
-
-            # 3) Build compact fact pack (use a SMALL model, e.g., gpt-4o-mini / similar)
-            fact_pack = await build_fact_pack(
-                llm_small=llm_small, docs=docs, budget_tokens=2000
-            )
-            if len(fact_pack.get("facts", [])) > 0:
-                break
-
-            fact_retries -= 1
-
-        # 2) Run assessor (use your big model)
+        # 1) Run assessor (use your big model)
         bt.logging.info(f"[LLM] Running assessment for {product_name}")
-        parsed = await run_assessor(
-            llm_big=llm_small, product=product_data, fact_pack=fact_pack
-        )
+        parsed = await run_assessor(llm_big=llm_big, product=product_data)
         bt.logging.info(f"[LLM] Assessment result: {json.dumps(parsed)}")
 
-        # 3) Persist + score
-        bt.logging.info(f"[LLM] Saving breakdown")
-        breakdown = {k: v["score"] for k, v in parsed["breakdown"].items()}
-        confidence = {k: v["confidence"] for k, v in parsed["breakdown"].items()}
-        x = [float(breakdown.get(k, 0.0)) for k in METRICS]
-        cx = [float(confidence.get(k, 0.0)) for k in METRICS]
-        try:
-            save_breakdown_and_confidence(
-                product_id=product_id,
-                review_cycle=review_cycle,
-                x=x,
-                cx=cx,
-                model_version="gb_v1",
-            )
-        except Exception as e:
-            bt.logging.warning(f"[LLM] save_breakdown failed: {e}")
-
-        try:
-            overall = predict_from_breakdown_and_confidence(breakdown, confidence)
-        except Exception as e:
-            bt.logging.warning(
-                f"[LLM] GB inference not available ({e}); falling back to uniform mean."
-            )
-            overall = sum(x) / len(x) * 10.0
-
         return {
-            "score": float(overall),
+            "score": parsed["overall_score"],
             "review": parsed["review"],
             "keywords": parsed["keywords"][:7],
         }
