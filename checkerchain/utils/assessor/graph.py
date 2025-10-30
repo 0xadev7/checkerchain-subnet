@@ -1,27 +1,30 @@
 from __future__ import annotations
 import time
 from typing import Any, Dict, List
+
 from langgraph.graph import StateGraph, END
 from langchain_core.messages import AIMessage
 from langchain_core.tools import Tool
+from pydantic import ValidationError
+
 from .config import LOG, SEARCH_TOP_K, FETCH_TOP_N, METRICS
 from .prompts import SCORING_PROMPT
 from .heuristics import should_research, format_evidence
 from .utils.json_utils import parse_or_repair_json, coerce_with_defaults
 from .models import AssessmentModel
-from pydantic import ValidationError
 
 
 class AssessorState(Dict[str, Any]): ...
 
 
 def build_graph(llm, tools: List[Tool], run_id: str, verbose: bool):
-    from .tools import web_search, web_fetch  # ensure tool symbols are bound
+    from .tools import web_search, web_fetch
 
     g = StateGraph(AssessorState)
 
     async def decide(state: AssessorState):
         t0 = time.time()
+        print("?>>", state)
         product = state["product"]
         state["do_research"] = should_research(product)
         LOG.info(
