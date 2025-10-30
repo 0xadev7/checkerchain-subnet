@@ -133,6 +133,6 @@ def build_graph(llm, tools: List[Tool], run_id: str, verbose: bool):
     g.add_edge("decide", "research")
     g.add_edge("research", "handoff")  # research → handoff
     g.add_edge("handoff", "grade")  # handoff → grade
-    g.add_edge("score", "validate")
+    g.add_edge("grade", "validate")
     g.add_edge("validate", END)
     return g.compile()
