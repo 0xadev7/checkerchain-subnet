@@ -17,7 +17,6 @@ class AssessorCallbackHandler(BaseCallbackHandler):
 
     def on_llm_end(self, response, **kwargs):
         if self.verbose:
-            print(response)
             usage = getattr(response, "llm_output", {}) or {}
             LOG.info(f"[assessor:{self.run_id}] LLM end: usage={usage}")
 

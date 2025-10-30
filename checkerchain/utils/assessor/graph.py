@@ -11,6 +11,7 @@ from .config import LOG, SEARCH_TOP_K, FETCH_TOP_N, METRICS
 from .prompts import SCORING_PROMPT
 from .heuristics import should_research, format_evidence
 from .utils.json_utils import parse_or_repair_json, coerce_with_defaults
+from .utils.msg import extract_text_from_message
 from .models import AssessmentModel
 
 
@@ -93,7 +94,7 @@ def build_graph(llm, tools: List[Tool], run_id: str, verbose: bool):
         )
         LOG.info(f"[assessor:{run_id}] Node score -> invoking LLM")
         msg = await llm.ainvoke(prompt)
-        state["raw_text"] = msg.content if isinstance(msg, AIMessage) else str(msg)
+        state["raw_text"] = extract_text_from_message(msg)
         LOG.info(
             f"[assessor:{run_id}] Node score -> received {len(state['raw_text'] or '')} chars ({(time.time()-t0)*1000:.1f} ms)"
         )
