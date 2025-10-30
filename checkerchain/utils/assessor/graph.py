@@ -76,20 +76,12 @@ def build_graph(llm, tools: List[Tool], run_id: str, verbose: bool):
         )
         return state
 
-    async def handoff(state: AssessorState):
-        try:
-            LOG.info(
-                f"[assessor:{run_id}] Node handoff -> entering with keys={list(state.keys())}"
-            )
-            return state
-        except Exception as e:
-            LOG.error(f"[assessor:{run_id}] Node handoff ERROR: {e}", exc_info=True)
-            raise
-
     async def grade(state: AssessorState):
         t0 = time.time()
         p = state.get("product")
+        print(">>>", state)
         evidence = format_evidence(state.get("evidence", []))
+        print("<<<", evidence)
         prompt = SCORING_PROMPT.format_messages(
             name=getattr(p, "name", ""),
             description=getattr(p, "description", ""),
@@ -125,14 +117,12 @@ def build_graph(llm, tools: List[Tool], run_id: str, verbose: bool):
 
     g.add_node("decide", decide)
     g.add_node("research", research)
-    g.add_node("handoff", handoff)  # <— new
-    g.add_node("grade", grade)  # <— renamed
+    g.add_node("grade", grade)
     g.add_node("validate", validate)
 
     g.set_entry_point("decide")
     g.add_edge("decide", "research")
-    g.add_edge("research", "handoff")  # research → handoff
-    g.add_edge("handoff", "grade")  # handoff → grade
+    g.add_edge("research", "grade")
     g.add_edge("grade", "validate")
     g.add_edge("validate", END)
     return g.compile()
