@@ -98,39 +98,19 @@ def _to_float_safe(x: Any, default: float) -> float:
 
 
 # -------------------------
-# Evidence / calibration
+# Calibration
 # -------------------------
-
-
-def _evidence_penalty(cits: List[str]) -> float:
-    """
-    Multiplicative penalty in [0.0, 0.20] based on citation strength.
-    - Only model_knowledge  -> ~0.18 penalty
-    - Mixed (urls + model)  -> ~0.08 penalty
-    - URLs only / good refs -> 0.0 penalty
-    """
-    if not cits:
-        return 0.15
-    cits_clean = [str(c).strip() for c in cits if str(c).strip()]
-    has_url = any(c.startswith("http") for c in cits_clean)
-    has_mk = any(c.lower() == "model_knowledge" for c in cits_clean)
-    if has_mk and not has_url:
-        return 0.18
-    if has_mk and has_url:
-        return 0.08
-    return 0.0
 
 
 def _calibrate_linear(raw_overall_0_100: float) -> float:
     """
     Final linear calibration to align with external 'Actual' trust score.
     Tunable via env:
-      CHECKERCHAIN_CAL_A (default 1.0883893666927287)
-      CHECKERCHAIN_CAL_B (default -1.70691946833463)
-    Set A=1.0, B=0.0 to disable.
+      CHECKERCHAIN_CAL_A (default 1)
+      CHECKERCHAIN_CAL_B (default 0)
     """
-    a = float(os.getenv("CHECKERCHAIN_CAL_A", "1.0883893666927287"))
-    b = float(os.getenv("CHECKERCHAIN_CAL_B", "-1.70691946833463"))
+    a = float(os.getenv("CHECKERCHAIN_CAL_A", "1"))
+    b = float(os.getenv("CHECKERCHAIN_CAL_B", "0"))
     return max(0.0, min(100.0, a * raw_overall_0_100 + b))
 
 
@@ -222,11 +202,7 @@ def coerce_with_defaults(data: Dict[str, Any]) -> Dict[str, Any]:
         # Confidence weight in [0.5, 1.0]: low confidence halves influence
         conf_multiplier = 0.5 + 0.5 * c
 
-        # Evidence penalty: up to -18% if only model_knowledge
-        pen = _evidence_penalty(fixed[m]["citations"])
-        evidence_multiplier = 1.0 - pen
-
-        eff = s * conf_multiplier * evidence_multiplier  # effective 0..10
+        eff = s * conf_multiplier  # effective 0..10
         agg += w * eff
 
     # Scale to 0..100 pre-calibration
