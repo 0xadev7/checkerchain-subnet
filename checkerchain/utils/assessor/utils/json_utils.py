@@ -126,11 +126,11 @@ def _calibrate_linear(raw_overall_0_100: float) -> float:
     Final linear calibration to align with external 'Actual' trust score.
     Tunable via env:
       CHECKERCHAIN_CAL_A (default 1.0883893666927287)
-      CHECKERCHAIN_CAL_B (default -13.70691946833463)
+      CHECKERCHAIN_CAL_B (default -1.70691946833463)
     Set A=1.0, B=0.0 to disable.
     """
     a = float(os.getenv("CHECKERCHAIN_CAL_A", "1.0883893666927287"))
-    b = float(os.getenv("CHECKERCHAIN_CAL_B", "-13.70691946833463"))
+    b = float(os.getenv("CHECKERCHAIN_CAL_B", "-1.70691946833463"))
     return max(0.0, min(100.0, a * raw_overall_0_100 + b))
 
 
