@@ -80,6 +80,7 @@ def build_graph(llm, tools: List[Tool], run_id: str, verbose: bool):
         t0 = time.time()
         p = state.get("product")
         evidence = format_evidence(state.get("evidence", []))
+        print("<<<", SCORING_PROMPT)
         prompt = SCORING_PROMPT.format_messages(
             name=getattr(p, "name", ""),
             description=getattr(p, "description", ""),
