@@ -92,10 +92,9 @@ def build_graph(llm, tools: List[Tool], run_id: str, verbose: bool):
             metrics=_esc_braces(", ".join(METRICS)),
         )
         LOG.info(f"[assessor:{run_id}] Node score -> invoking LLM")
-        print("###", prompt)
         msg = await llm.ainvoke(prompt)
-        print("***", msg)
         state["raw_text"] = msg.content if isinstance(msg, AIMessage) else str(msg)
+        print(msg.content, state["raw_text"])
         LOG.info(
             f"[assessor:{run_id}] Node score -> received {len(state['raw_text'] or '')} chars ({(time.time()-t0)*1000:.1f} ms)"
         )
