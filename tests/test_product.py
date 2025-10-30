@@ -25,7 +25,7 @@ async def main(product_id: str):
     bt.logging.info(f"Product:\n{product}")
 
     # Generate assessment
-    response = await generate_complete_assessment(product)
+    response = await generate_complete_assessment(product, verbose=True)
     bt.logging.info(f"Response:\n{response}")
 
     # Reward process

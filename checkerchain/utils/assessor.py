@@ -1,5 +1,5 @@
 from __future__ import annotations
-import os, re, json, asyncio
+import os, re, json, asyncio, time, uuid, logging
 from typing import Any, Dict, List, Optional
 
 import aiohttp
@@ -10,7 +10,21 @@ from langchain_core.tools import tool, Tool
 from langchain_core.messages import AIMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langgraph.graph import StateGraph, END
+from langchain_core.callbacks import BaseCallbackHandler
+from langchain_core.runnables import RunnableConfig
 
+# Prefer bittensor logger if available
+try:
+    import bittensor as bt
+
+    _LOG = bt.logging
+except Exception:
+    _LOG = logging.getLogger("assessor")
+    if not _LOG.handlers:
+        _h = logging.StreamHandler()
+        _h.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+        _LOG.addHandler(_h)
+    _LOG.setLevel(logging.INFO)
 
 # ---------- Config ----------
 USER_AGENT = "CheckerChainAssessor/1.0 (+https://checkerchain.com/)"
@@ -166,17 +180,69 @@ def _coerce_with_defaults(data: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+# ---------- Verbose callback handler ----------
+class AssessorCallbackHandler(BaseCallbackHandler):
+    def __init__(self, run_id: str, verbose: bool = False):
+        self.run_id = run_id
+        self.verbose = verbose
+
+    # LLM events
+    def on_llm_start(self, serialized, prompts, **kwargs):
+        if not self.verbose:
+            return
+        model = (serialized or {}).get("id", "llm")
+        _LOG.info(
+            f"[assessor:{self.run_id}] LLM start: {model} | prompts={len(prompts)}"
+        )
+
+    def on_llm_end(self, response, **kwargs):
+        if not self.verbose:
+            return
+        usage = getattr(response, "llm_output", {}) or {}
+        _LOG.info(f"[assessor:{self.run_id}] LLM end: usage={usage}")
+
+    def on_llm_error(self, error, **kwargs):
+        _LOG.error(f"[assessor:{self.run_id}] LLM error: {error}")
+
+    # Tool events
+    def on_tool_start(self, serialized, input_str, **kwargs):
+        if not self.verbose:
+            return
+        name = (serialized or {}).get("name", "tool")
+        _LOG.info(f"[assessor:{self.run_id}] Tool start: {name} | input={input_str}")
+
+    def on_tool_end(self, output, **kwargs):
+        if not self.verbose:
+            return
+        # Truncate noisy outputs
+        summary = str(output)
+        if len(summary) > 500:
+            summary = summary[:500] + "...[trunc]"
+        _LOG.info(f"[assessor:{self.run_id}] Tool end: {summary}")
+
+    def on_tool_error(self, error, **kwargs):
+        _LOG.error(f"[assessor:{self.run_id}] Tool error: {error}")
+
+
 # ---------- Web tools: Tavily → Brave → DuckDuckGo ----------
-async def _tavily_search(query: str, k: int = 5) -> List[dict]:
+async def _tavily_search(query: str, k: int = 5, run_id: str = "-") -> List[dict]:
     if not TAVILY_API_KEY:
         return []
     url = "https://api.tavily.com/search"
     payload = {"api_key": TAVILY_API_KEY, "query": query, "max_results": k}
-    async with aiohttp.ClientSession(headers={"User-Agent": USER_AGENT}) as sess:
-        async with sess.post(url, json=payload, timeout=25) as resp:
-            if resp.status != 200:
-                return []
-            data = await resp.json()
+    t0 = time.time()
+    try:
+        async with aiohttp.ClientSession(headers={"User-Agent": USER_AGENT}) as sess:
+            async with sess.post(url, json=payload, timeout=25) as resp:
+                if resp.status != 200:
+                    _LOG.warning(f"[assessor:{run_id}] Tavily HTTP {resp.status}")
+                    return []
+                data = await resp.json()
+        dt = (time.time() - t0) * 1000
+        _LOG.info(f"[assessor:{run_id}] Tavily search ok in {dt:.1f} ms")
+    except Exception as e:
+        _LOG.error(f"[assessor:{run_id}] Tavily error: {e}")
+        return []
     results = []
     for r in (data.get("results") or [])[:k]:
         results.append(
@@ -189,17 +255,25 @@ async def _tavily_search(query: str, k: int = 5) -> List[dict]:
     return [r for r in results if r["url"]]
 
 
-async def _brave_search(query: str, k: int = 5) -> List[dict]:
+async def _brave_search(query: str, k: int = 5, run_id: str = "-") -> List[dict]:
     if not BRAVE_API_KEY:
         return []
     endpoint = "https://api.search.brave.com/res/v1/web/search"
     params = {"q": query, "count": k}
     headers = {"X-Subscription-Token": BRAVE_API_KEY, "User-Agent": USER_AGENT}
-    async with aiohttp.ClientSession(headers=headers) as sess:
-        async with sess.get(endpoint, params=params, timeout=25) as resp:
-            if resp.status != 200:
-                return []
-            data = await resp.json()
+    t0 = time.time()
+    try:
+        async with aiohttp.ClientSession(headers=headers) as sess:
+            async with sess.get(endpoint, params=params, timeout=25) as resp:
+                if resp.status != 200:
+                    _LOG.warning(f"[assessor:{run_id}] Brave HTTP {resp.status}")
+                    return []
+                data = await resp.json()
+        dt = (time.time() - t0) * 1000
+        _LOG.info(f"[assessor:{run_id}] Brave search ok in {dt:.1f} ms")
+    except Exception as e:
+        _LOG.error(f"[assessor:{run_id}] Brave error: {e}")
+        return []
     web = (data.get("web") or {}).get("results") or []
     out = []
     for r in web[:k]:
@@ -213,11 +287,18 @@ async def _brave_search(query: str, k: int = 5) -> List[dict]:
     return [r for r in out if r["url"]]
 
 
-async def _ddg_search(query: str, k: int = 5) -> List[dict]:
+async def _ddg_search(query: str, k: int = 5, run_id: str = "-") -> List[dict]:
     url = f"https://duckduckgo.com/html/?q={query}"
-    async with aiohttp.ClientSession(headers={"User-Agent": USER_AGENT}) as sess:
-        async with sess.get(url, timeout=25) as resp:
-            html = await resp.text()
+    t0 = time.time()
+    try:
+        async with aiohttp.ClientSession(headers={"User-Agent": USER_AGENT}) as sess:
+            async with sess.get(url, timeout=25) as resp:
+                html = await resp.text()
+        dt = (time.time() - t0) * 1000
+        _LOG.info(f"[assessor:{run_id}] DDG search ok in {dt:.1f} ms")
+    except Exception as e:
+        _LOG.error(f"[assessor:{run_id}] DDG error: {e}")
+        return []
     soup = BeautifulSoup(html, "html.parser")
     out = []
     for r in soup.select(".result__body")[:k]:
@@ -234,44 +315,59 @@ async def _ddg_search(query: str, k: int = 5) -> List[dict]:
     return out
 
 
-async def _tiered_search_impl(query: str, k: int = SEARCH_TOP_K) -> List[dict]:
+async def _tiered_search_impl(query: str, k: int, run_id: str) -> List[dict]:
     q = query.strip()
     if not q:
         return []
-    res = await _tavily_search(q, k)
+    res = await _tavily_search(q, k, run_id)
     if not res:
-        res = await _brave_search(q, k)
+        res = await _brave_search(q, k, run_id)
     if not res:
-        res = await _ddg_search(q, k)
+        res = await _ddg_search(q, k, run_id)
+    _LOG.info(f"[assessor:{run_id}] Search results: {len(res)}")
     return res
 
 
 @tool
-async def web_search(query: str, k: int = SEARCH_TOP_K) -> List[dict]:
+async def web_search(
+    query: str, k: int = SEARCH_TOP_K, run_id: Optional[str] = None
+) -> List[dict]:
     """
     Tiered web search. Returns a list of {title, url, snippet}.
     Order of providers: Tavily → Brave → DuckDuckGo.
     """
-    return await _tiered_search_impl(query, k)
+    rid = run_id or "-"
+    return await _tiered_search_impl(query, k, rid)
 
 
 @tool
-async def web_fetch(url: str, max_bytes: int = FETCH_MAX_BYTES) -> dict:
+async def web_fetch(
+    url: str, max_bytes: int = FETCH_MAX_BYTES, run_id: Optional[str] = None
+) -> dict:
     """
     Fetch a URL and return {url, title, text}. Truncates to max_bytes.
     """
     cap = min(max_bytes, ABSOLUTE_MAX_BYTES)
-    async with aiohttp.ClientSession(headers={"User-Agent": USER_AGENT}) as sess:
-        async with sess.get(url, timeout=30) as resp:
-            content = await resp.read()
-    content = content[:cap]
-    html = content.decode(errors="ignore")
-    soup = BeautifulSoup(html, "html.parser")
-    for tag in soup(["script", "style", "noscript"]):
-        tag.decompose()
-    text = re.sub(r"\s+", " ", soup.get_text(" ", strip=True))
-    title = soup.title.get_text(strip=True) if soup.title else url
-    return {"url": url, "title": title, "text": text[:cap]}
+    t0 = time.time()
+    try:
+        async with aiohttp.ClientSession(headers={"User-Agent": USER_AGENT}) as sess:
+            async with sess.get(url, timeout=30) as resp:
+                content = await resp.read()
+        content = content[:cap]
+        html = content.decode(errors="ignore")
+        soup = BeautifulSoup(html, "html.parser")
+        for tag in soup(["script", "style", "noscript"]):
+            tag.decompose()
+        text = re.sub(r"\s+", " ", soup.get_text(" ", strip=True))
+        title = soup.title.get_text(strip=True) if soup.title else url
+        dt = (time.time() - t0) * 1000
+        _LOG.info(
+            f"[assessor:{run_id or '-'}] Fetched {url[:80]}... in {dt:.1f} ms, {len(text)} chars"
+        )
+        return {"url": url, "title": title, "text": text[:cap]}
+    except Exception as e:
+        _LOG.error(f"[assessor:{run_id or '-'}] Fetch error for {url}: {e}")
+        return {"url": url, "title": url, "text": ""}
 
 
 # ---------- Prompts ----------
@@ -337,27 +433,38 @@ def _format_evidence(notes: List[dict]) -> str:
 class AssessorState(Dict[str, Any]): ...
 
 
-def _build_graph(llm, tools: List[Tool]):
+def _build_graph(llm, tools: List[Tool], run_id: str, verbose: bool):
     g = StateGraph(AssessorState)
 
     async def decide(state: AssessorState):
+        t0 = time.time()
         product = state["product"]
         state["do_research"] = _should_research(product)
+        _LOG.info(
+            f"[assessor:{run_id}] Node decide -> do_research={state['do_research']} ({(time.time()-t0)*1000:.1f} ms)"
+        )
         return state
 
     async def research(state: AssessorState):
+        t0 = time.time()
         if not state.get("do_research"):
             state["evidence"] = []
+            _LOG.info(
+                f"[assessor:{run_id}] Node research skipped ({(time.time()-t0)*1000:.1f} ms)"
+            )
             return state
         p = state["product"]
         seed_url = getattr(p, "url", "") or ""
         q = f'{getattr(p, "name", "")} {getattr(p, "category", "")} crypto token whitepaper roadmap security team site:{seed_url}'
-        search_res = await web_search.ainvoke({"query": q, "k": SEARCH_TOP_K})
+        _LOG.info(f"[assessor:{run_id}] Searching: {q}")
+        search_res = await web_search.ainvoke(
+            {"query": q, "k": SEARCH_TOP_K, "run_id": run_id}
+        )
         top = search_res[:FETCH_TOP_N] if isinstance(search_res, list) else []
         fetched = []
         for r in top:
             try:
-                doc = await web_fetch.ainvoke({"url": r["url"]})
+                doc = await web_fetch.ainvoke({"url": r["url"], "run_id": run_id})
                 fetched.append(
                     {
                         "title": r.get("title", ""),
@@ -366,12 +473,17 @@ def _build_graph(llm, tools: List[Tool]):
                         "text": doc.get("text", ""),
                     }
                 )
-            except Exception:
+            except Exception as e:
+                _LOG.error(f"[assessor:{run_id}] Fetch pipeline error: {e}")
                 continue
         state["evidence"] = fetched if fetched else top
+        _LOG.info(
+            f"[assessor:{run_id}] Node research -> evidence={len(state['evidence'])} ({(time.time()-t0)*1000:.1f} ms)"
+        )
         return state
 
     async def score(state: AssessorState):
+        t0 = time.time()
         p = state["product"]
         evidence = _format_evidence(state.get("evidence", []))
         prompt = SCORING_PROMPT.format_messages(
@@ -382,11 +494,16 @@ def _build_graph(llm, tools: List[Tool]):
             evidence=evidence,
             metrics=", ".join(METRICS),
         )
+        _LOG.info(f"[assessor:{run_id}] Node score -> invoking LLM")
         msg = await llm.ainvoke(prompt)
         state["raw_text"] = msg.content if isinstance(msg, AIMessage) else str(msg)
+        _LOG.info(
+            f"[assessor:{run_id}] Node score -> received {len(state['raw_text'] or '')} chars ({(time.time()-t0)*1000:.1f} ms)"
+        )
         return state
 
     async def validate(state: AssessorState):
+        t0 = time.time()
         txt = state.get("raw_text", "")
         obj = _parse_or_repair_json(txt)
         coerced = _coerce_with_defaults(obj)
@@ -397,6 +514,9 @@ def _build_graph(llm, tools: List[Tool]):
                 _coerce_with_defaults(coerced)
             ).model_dump()
         state["final"] = parsed
+        _LOG.info(
+            f"[assessor:{run_id}] Node validate -> done ({(time.time()-t0)*1000:.1f} ms)"
+        )
         return state
 
     g.add_node("decide", decide)
@@ -413,13 +533,42 @@ def _build_graph(llm, tools: List[Tool]):
 
 
 # ---------- Public entry point ----------
-async def run_assessor(llm_big, product) -> Dict[str, Any]:
+async def run_assessor(llm_big, product, *, verbose: bool = False) -> Dict[str, Any]:
     """
     Drop-in entry point:
-        parsed = await run_assessor(llm_big=llm_big, product=product)
+        parsed = await run_assessor(llm_big=llm_big, product=product, verbose=True)
     """
+    # Raise verbosity of aiohttp if needed
+    if verbose and hasattr(_LOG, "setLevel"):
+        try:
+            _LOG.setLevel(logging.DEBUG)
+            logging.getLogger("aiohttp.client").setLevel(logging.WARNING)
+        except Exception:
+            pass
+
+    run_id = uuid.uuid4().hex[:8]
+    _LOG.info(
+        f"[assessor:{run_id}] Start assessment for '{getattr(product,'name','?')}'"
+    )
+
+    # Optional LC tracing (enable by env)
+    #   LANGCHAIN_TRACING_V2=true
+    #   LANGCHAIN_API_KEY=...
+    #   LANGCHAIN_PROJECT=CheckerChain
+    callbacks = [AssessorCallbackHandler(run_id, verbose=verbose)]
+
+    # Enable tool use on your big model
     llm = llm_big.bind_tools([web_search, web_fetch])
-    graph = _build_graph(llm, [web_search, web_fetch])
+
+    graph = _build_graph(llm, [web_search, web_fetch], run_id, verbose)
     state = {"product": product}
-    result = await graph.ainvoke(state)
+
+    # Pass callbacks through RunnableConfig so both LLM and tools are instrumented
+    cfg = RunnableConfig(callbacks=callbacks, tags=["assessor", run_id])
+
+    t0 = time.time()
+    result = await graph.ainvoke(state, config=cfg)
+    dt = (time.time() - t0) * 1000
+    _LOG.info(f"[assessor:{run_id}] Finished in {dt:.1f} ms")
+
     return result["final"]

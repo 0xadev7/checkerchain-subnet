@@ -365,13 +365,17 @@ async def generate_quality_keywords_with_score(
         return [quality_level, trust_level, risk_level, "assessed", "evaluated"]
 
 
-async def generate_complete_assessment(product_data: UnreviewedProduct) -> dict:
+async def generate_complete_assessment(
+    product_data: UnreviewedProduct, verbose=False
+) -> dict:
     try:
         product_name = product_data.name
 
         # 1) Run assessor (use your big model)
         bt.logging.info(f"[LLM] Running assessment for {product_name}")
-        parsed = await run_assessor(llm_big=llm_big, product=product_data)
+        parsed = await run_assessor(
+            llm_big=llm_big, product=product_data, verbose=verbose
+        )
         bt.logging.info(f"[LLM] Assessment result: {json.dumps(parsed)}")
 
         return {
@@ -384,7 +388,7 @@ async def generate_complete_assessment(product_data: UnreviewedProduct) -> dict:
         bt.logging.error(f"Error in complete assessment generation: {e}")
         # Return fallback response
         return {
-            "score": None,
+            "score": 0,
             "review": None,
             "keywords": [],
         }
