@@ -88,6 +88,7 @@ def build_graph(llm, tools: List[Tool], run_id: str, verbose: bool):
             evidence=evidence,
             metrics=", ".join(METRICS),
         )
+        print(">>>", prompt)
         LOG.info(f"[assessor:{run_id}] Node score -> invoking LLM")
         msg = await llm.ainvoke(prompt)
         state["raw_text"] = msg.content if isinstance(msg, AIMessage) else str(msg)
