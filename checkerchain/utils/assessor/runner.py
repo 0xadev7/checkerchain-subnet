@@ -25,13 +25,16 @@ async def run_assessor(llm_big, product, *, verbose: bool = False) -> Dict[str, 
     )
 
     callbacks = [AssessorCallbackHandler(run_id, verbose=verbose)]
-    llm = llm_big.bind_tools([])  # bind now; tools are registered via graph build
+    llm = llm_big.bind_tools([])
+
     graph = build_graph(llm, [], run_id, verbose)
     state = {"product": product}
 
     cfg = RunnableConfig(callbacks=callbacks, tags=["assessor", run_id])
 
     t0 = time.time()
+    print(state, cfg, graph)
     result = await graph.ainvoke(state, config=cfg)
     LOG.info(f"[assessor:{run_id}] Finished in {(time.time()-t0)*1000:.1f} ms")
+
     return result["final"]
