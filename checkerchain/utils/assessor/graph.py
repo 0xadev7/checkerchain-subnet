@@ -79,14 +79,12 @@ def build_graph(llm, tools: List[Tool], run_id: str, verbose: bool):
     async def grade(state: AssessorState):
         t0 = time.time()
         p = state.get("product")
-        print(">>>", state)
         evidence = format_evidence(state.get("evidence", []))
-        print("<<<", evidence)
         prompt = SCORING_PROMPT.format_messages(
             name=getattr(p, "name", ""),
             description=getattr(p, "description", ""),
             url=getattr(p, "url", ""),
-            category=getattr(p, "category", ""),
+            category=getattr(getattr(p, "category", {}), "name", ""),
             evidence=evidence,
             metrics=", ".join(METRICS),
         )
