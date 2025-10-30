@@ -224,7 +224,7 @@ def coerce_with_defaults(data: Dict[str, Any]) -> Dict[str, Any]:
 
         # Evidence penalty: up to -18% if only model_knowledge
         pen = _evidence_penalty(fixed[m]["citations"])
-        evidence_multiplier = 1.0 - pen
+        evidence_multiplier = 1.0
 
         eff = s * conf_multiplier * evidence_multiplier  # effective 0..10
         agg += w * eff
