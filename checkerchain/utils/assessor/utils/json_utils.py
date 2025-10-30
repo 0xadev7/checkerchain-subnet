@@ -1,47 +1,25 @@
 from __future__ import annotations
-import re, json
-from typing import Any, Dict, Optional
+import os
+import re
+import json
 import numbers
+from typing import Any, Dict, Optional, List
 
-from ..config import LOG, METRICS
+from ..config import METRICS
+
+# -------------------------
+# JSON extraction / parsing
+# -------------------------
 
 _JSON_BLOCK_RE = re.compile(r"(\{.*\}|\[.*\])", re.DOTALL)
 
 
-def _norm_key(k):
-    if not isinstance(k, str):
-        return k
-    s = k.strip()
-    if (s.startswith('"') and s.endswith('"')) or (
-        s.startswith("'") and s.endswith("'")
-    ):
-        s = s[1:-1].strip()
-    return s
-
-
-def _normalize_keys(obj):
-    if isinstance(obj, dict):
-        return {_norm_key(k): _normalize_keys(v) for k, v in obj.items()}
-    if isinstance(obj, list):
-        return [_normalize_keys(v) for v in obj]
-    return obj
-
-
-def _to_float_safe(x, default: float) -> float:
-    if isinstance(x, numbers.Real):
-        return float(x)
-    if isinstance(x, str):
-        try:
-            return float(x.strip())
-        except Exception:
-            return default
-    return default
-
-
 def extract_json_block(text: str) -> Optional[str]:
+    """Extract the most likely JSON block from a text blob (handles fenced code)."""
     if not text:
         return None
     txt = text.strip()
+    # strip ```json fences if present
     txt = re.sub(r"^\s*```(?:json)?\s*", "", txt)
     txt = re.sub(r"\s*```\s*$", "", txt)
     try:
@@ -49,6 +27,7 @@ def extract_json_block(text: str) -> Optional[str]:
         return txt
     except Exception:
         pass
+    # fallback: pick the largest JSON-looking block
     cands = _JSON_BLOCK_RE.findall(txt)
     for block in sorted(cands, key=len, reverse=True):
         try:
@@ -60,6 +39,9 @@ def extract_json_block(text: str) -> Optional[str]:
 
 
 def parse_or_repair_json(txt: str) -> dict:
+    """
+    Parse LLM output into JSON. If it fails, run json_repair, then normalize keys.
+    """
     block = extract_json_block(txt) or txt
     try:
         data = json.loads(block)
@@ -73,6 +55,90 @@ def parse_or_repair_json(txt: str) -> dict:
     return _normalize_keys(data)
 
 
+# -------------------------
+# Key normalization helpers
+# -------------------------
+
+
+def _norm_key(k: Any) -> Any:
+    """Trim whitespace and outer quotes from dict keys."""
+    if not isinstance(k, str):
+        return k
+    s = k.strip()
+    if (s.startswith('"') and s.endswith('"')) or (
+        s.startswith("'") and s.endswith("'")
+    ):
+        s = s[1:-1].strip()
+    return s
+
+
+def _normalize_keys(obj: Any):
+    """Recursively normalize dictionary keys (strip spaces/outer quotes)."""
+    if isinstance(obj, dict):
+        return {_norm_key(k): _normalize_keys(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_normalize_keys(v) for v in obj]
+    return obj
+
+
+# -------------------------
+# Safe numeric coercion
+# -------------------------
+
+
+def _to_float_safe(x: Any, default: float) -> float:
+    if isinstance(x, numbers.Real):
+        return float(x)
+    if isinstance(x, str):
+        try:
+            return float(x.strip())
+        except Exception:
+            return default
+    return default
+
+
+# -------------------------
+# Evidence / calibration
+# -------------------------
+
+
+def _evidence_penalty(cits: List[str]) -> float:
+    """
+    Multiplicative penalty in [0.0, 0.20] based on citation strength.
+    - Only model_knowledge  -> ~0.18 penalty
+    - Mixed (urls + model)  -> ~0.08 penalty
+    - URLs only / good refs -> 0.0 penalty
+    """
+    if not cits:
+        return 0.15
+    cits_clean = [str(c).strip() for c in cits if str(c).strip()]
+    has_url = any(c.startswith("http") for c in cits_clean)
+    has_mk = any(c.lower() == "model_knowledge" for c in cits_clean)
+    if has_mk and not has_url:
+        return 0.18
+    if has_mk and has_url:
+        return 0.08
+    return 0.0
+
+
+def _calibrate_linear(raw_overall_0_100: float) -> float:
+    """
+    Final linear calibration to align with external 'Actual' trust score.
+    Tunable via env:
+      CHECKERCHAIN_CAL_A (default 1.0883893666927287)
+      CHECKERCHAIN_CAL_B (default -13.70691946833463)
+    Set A=1.0, B=0.0 to disable.
+    """
+    a = float(os.getenv("CHECKERCHAIN_CAL_A", "1.0883893666927287"))
+    b = float(os.getenv("CHECKERCHAIN_CAL_B", "-13.70691946833463"))
+    return max(0.0, min(100.0, a * raw_overall_0_100 + b))
+
+
+# -------------------------
+# Defaults / Coercion
+# -------------------------
+
+
 def _mk_default_item() -> Dict[str, Any]:
     return {
         "score": 5.0,
@@ -83,11 +149,17 @@ def _mk_default_item() -> Dict[str, Any]:
 
 
 def coerce_with_defaults(data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Normalize/repair an assessor JSON object and compute an adjusted overall score:
+      - Per-metric confidence weighting: multiplier in [0.5, 1.0]
+      - Evidence penalty: up to -18% when only model_knowledge
+      - Linear calibration to align with external scale (env-overridable)
+    """
     data = _normalize_keys(data or {})
     out = dict(data)
     breakdown = out.get("breakdown", {})
 
-    # tolerate weird shapes
+    # tolerate weird shapes (e.g., list)
     if isinstance(breakdown, list):
         breakdown = {
             m: (breakdown[i] if i < len(breakdown) else {})
@@ -96,7 +168,7 @@ def coerce_with_defaults(data: Dict[str, Any]) -> Dict[str, Any]:
     elif not isinstance(breakdown, dict):
         breakdown = {}
 
-    fixed = {}
+    fixed: Dict[str, Dict[str, Any]] = {}
     for m in METRICS:
         item = breakdown.get(m) or _mk_default_item()
         if not isinstance(item, dict):
@@ -128,6 +200,7 @@ def coerce_with_defaults(data: Dict[str, Any]) -> Dict[str, Any]:
             "confidence": conf,
         }
 
+    # ---- Confidence-weighted aggregation with evidence penalties ----
     weights = {
         "project": 0.12,
         "utility": 0.10,
@@ -140,9 +213,29 @@ def coerce_with_defaults(data: Dict[str, Any]) -> Dict[str, Any]:
         "roadmap": 0.07,
         "clarity": 0.05,
     }
-    total = sum(weights[k] * fixed[k]["score"] for k in weights)
-    overall = max(0.0, min(100.0, total * 10.0))
 
+    agg = 0.0
+    for m, w in weights.items():
+        s = float(fixed[m]["score"])  # 0..10
+        c = float(fixed[m]["confidence"])  # 0..1
+
+        # Confidence weight in [0.5, 1.0]: low confidence halves influence
+        conf_multiplier = 0.5 + 0.5 * c
+
+        # Evidence penalty: up to -18% if only model_knowledge
+        pen = _evidence_penalty(fixed[m]["citations"])
+        evidence_multiplier = 1.0 - pen
+
+        eff = s * conf_multiplier * evidence_multiplier  # effective 0..10
+        agg += w * eff
+
+    # Scale to 0..100 pre-calibration
+    overall_raw = max(0.0, min(100.0, agg * 10.0))
+
+    # Final calibration to match external “Actual” scale
+    overall = _calibrate_linear(overall_raw)
+
+    # ---- Non-overall fields (review/keywords) ----
     review = (
         str(out.get("review", "")).strip()
         or "Preliminary review based on available evidence."
