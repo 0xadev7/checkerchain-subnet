@@ -1,6 +1,6 @@
 from __future__ import annotations
 import time
-from typing import Any, Dict, List
+from typing import TypedDict, Any, Dict, List
 
 from langgraph.graph import StateGraph, END
 from langchain_core.messages import AIMessage
@@ -14,7 +14,12 @@ from .utils.json_utils import parse_or_repair_json, coerce_with_defaults
 from .models import AssessmentModel
 
 
-class AssessorState(Dict[str, Any]): ...
+class AssessorState(TypedDict, total=False):
+    product: Any
+    do_research: bool
+    evidence: List[Dict[str, Any]]
+    raw_text: str
+    final: Dict[str, Any]
 
 
 def build_graph(llm, tools: List[Tool], run_id: str, verbose: bool):
@@ -23,8 +28,10 @@ def build_graph(llm, tools: List[Tool], run_id: str, verbose: bool):
     g = StateGraph(AssessorState)
 
     async def decide(state: AssessorState):
+        if "product" not in state:
+            raise ValueError("State missing 'product' at entry.")
+
         t0 = time.time()
-        print("?>>", state)
         product = state["product"]
         state["do_research"] = should_research(product)
         LOG.info(
@@ -40,7 +47,7 @@ def build_graph(llm, tools: List[Tool], run_id: str, verbose: bool):
                 f"[assessor:{run_id}] Node research skipped ({(time.time()-t0)*1000:.1f} ms)"
             )
             return state
-        p = state["product"]
+        p = state.get("product")
         seed_url = getattr(p, "url", "") or ""
         q = f'{getattr(p, "name", "")} {getattr(p, "category", "")} crypto token whitepaper roadmap security team site:{seed_url}'
         LOG.info(f"[assessor:{run_id}] Searching: {q}")
@@ -71,7 +78,7 @@ def build_graph(llm, tools: List[Tool], run_id: str, verbose: bool):
 
     async def score(state: AssessorState):
         t0 = time.time()
-        p = state["product"]
+        p = state.get("product")
         evidence = format_evidence(state.get("evidence", []))
         prompt = SCORING_PROMPT.format_messages(
             name=getattr(p, "name", ""),
