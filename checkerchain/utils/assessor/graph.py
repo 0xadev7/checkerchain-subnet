@@ -77,19 +77,20 @@ def build_graph(llm, tools: List[Tool], run_id: str, verbose: bool):
         return state
 
     async def grade(state: AssessorState):
+        def _esc_braces(s: str) -> str:
+            return s.replace("{", "{{").replace("}", "}}")
+
         t0 = time.time()
         p = state.get("product")
         evidence = format_evidence(state.get("evidence", []))
-        print("<<<", SCORING_PROMPT)
         prompt = SCORING_PROMPT.format_messages(
-            name=getattr(p, "name", ""),
-            description=getattr(p, "description", ""),
-            url=getattr(p, "url", ""),
+            name=_esc_braces(getattr(p, "name", "")),
+            description=_esc_braces(getattr(p, "description", "")),
+            url=_esc_braces(getattr(p, "url", "")),
             category=getattr(getattr(p, "category", {}), "name", ""),
-            evidence=evidence,
-            metrics=", ".join(METRICS),
+            evidence=_esc_braces(evidence),
+            metrics=_esc_braces(", ".join(METRICS)),
         )
-        print(">>>", prompt)
         LOG.info(f"[assessor:{run_id}] Node score -> invoking LLM")
         msg = await llm.ainvoke(prompt)
         state["raw_text"] = msg.content if isinstance(msg, AIMessage) else str(msg)
