@@ -74,8 +74,8 @@ llm_small = ChatOpenAI(
 )
 
 llm_big = ChatOpenAI(
-    model="gpt-4o-mini",
-    temperature=0.3,
+    model="gpt-4o",
+    temperature=0.4,
     max_tokens=2000,
     api_key=OPENROUTER_API_KEY,
     reasoning={"effort": "high", "summary": "auto"},
